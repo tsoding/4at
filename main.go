@@ -57,6 +57,9 @@ func server(messages chan Message) {
 				if now.Sub(bannedAt).Seconds() >= BanLimit {
 					delete(bannedMfs, addr.IP.String())
 					banned = false
+				} else {
+					msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", BanLimit - now.Sub(bannedAt).Seconds())))
+					msg.Conn.Close()
 				}
 			}
 
@@ -66,9 +69,6 @@ func server(messages chan Message) {
 					Conn: msg.Conn,
 					LastMessage: time.Now(),
 				}
-			} else {
-				msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", BanLimit - now.Sub(bannedAt).Seconds())))
-				msg.Conn.Close()
 			}
 		case ClientDisconnected:
 			addr := msg.Conn.RemoteAddr().(*net.TCPAddr)
