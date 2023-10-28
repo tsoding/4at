@@ -143,7 +143,7 @@ func client(conn net.Conn, messages chan Message) {
 		if cmd, isCmd := IsCommand(text); isCmd {
 			mt, _ = getMessageTypeByCmd(cmd)
 		}
-		log.Printf("mt: %v", mt)
+
 		messages <- Message{
 			Type: mt,
 			Text: text,
