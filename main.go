@@ -24,6 +24,15 @@ func sensitive(message string) string {
 	}
 }
 
+func getMessageTypeByCmd(cmd Cmd) (MessageType, bool) {
+	switch (cmd) {
+		case Quit:
+			return ClientDisconnected, true
+		default: 
+			return MessageType(0), false
+	}
+}
+
 type MessageType int
 const (
 	ClientConnected MessageType = iota + 1
@@ -129,8 +138,14 @@ func client(conn net.Conn, messages chan Message) {
 			return
 		}
 		text := string(buffer[0:n])
+
+		var mt MessageType = NewMessage
+		if cmd, isCmd := IsCommand(text); isCmd {
+			mt, _ = getMessageTypeByCmd(cmd)
+		}
+
 		messages <- Message{
-			Type: NewMessage,
+			Type: mt,
 			Text: text,
 			Conn: conn,
 		}
