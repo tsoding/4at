@@ -60,6 +60,7 @@ func server(messages chan Message) {
 				} else {
 					msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", BanLimit - now.Sub(bannedAt).Seconds())))
 					msg.Conn.Close()
+					continue
 				}
 			}
 
