@@ -69,7 +69,7 @@ func server(messages chan Message) {
 				}
 			} else {
 				banLiftsAt := bannedAt.Add(BanLimit)
-				msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", time.Until(banLiftsAt).Seconds())))
+				fmt.Fprintf(msg.Conn, "You are banned MF: %f secs left\n", time.Until(banLiftsAt).Seconds())
 				msg.Conn.Close()
 			}
 		case ClientDisconnected:
