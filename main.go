@@ -11,10 +11,11 @@ import (
 const (
 	Port        = "6969"
 	SafeMode    = true
-	MessageRate = 1.0
-	BanLimit    = 10 * 60.0
 	StrikeLimit = 10
 )
+
+const MessageRate time.Duration = time.Second * 1
+const BanLimit time.Duration = time.Minute * 10
 
 func sensitive(message string) string {
 	if SafeMode {
@@ -53,9 +54,8 @@ func server(messages chan Message) {
 		case ClientConnected:
 			addr := msg.Conn.RemoteAddr().(*net.TCPAddr)
 			bannedAt, banned := bannedMfs[addr.IP.String()]
-			now := time.Now()
 			if banned {
-				if now.Sub(bannedAt).Seconds() >= BanLimit {
+				if time.Since(bannedAt) >= BanLimit {
 					delete(bannedMfs, addr.IP.String())
 					banned = false
 				}
@@ -68,7 +68,8 @@ func server(messages chan Message) {
 					LastMessage: time.Now(),
 				}
 			} else {
-				msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", BanLimit-now.Sub(bannedAt).Seconds())))
+				banLiftsAt := bannedAt.Add(BanLimit)
+				msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", time.Until(banLiftsAt).Seconds())))
 				msg.Conn.Close()
 			}
 		case ClientDisconnected:
@@ -80,7 +81,7 @@ func server(messages chan Message) {
 			author := clients[authorAddr.String()]
 			now := time.Now()
 			if author != nil {
-				if now.Sub(author.LastMessage).Seconds() >= MessageRate {
+				if time.Since(author.LastMessage) >= MessageRate {
 					if utf8.ValidString(msg.Text) {
 						author.LastMessage = now
 						author.StrikeCount = 0
