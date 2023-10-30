@@ -151,6 +151,7 @@ func main() {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Printf("Could not accept a connection: %s\n", sensitive(err.Error()))
+			continue
 		}
 		messages <- Message{
 			Type: ClientConnected,
