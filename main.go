@@ -1,18 +1,18 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"time"
-	"fmt"
 	"unicode/utf8"
 )
 
 const (
-	Port = "6969"
-	SafeMode = true
+	Port        = "6969"
+	SafeMode    = true
 	MessageRate = 1.0
-	BanLimit = 10*60.0
+	BanLimit    = 10 * 60.0
 	StrikeLimit = 10
 )
 
@@ -25,6 +25,7 @@ func sensitive(message string) string {
 }
 
 type MessageType int
+
 const (
 	ClientConnected MessageType = iota + 1
 	ClientDisconnected
@@ -38,7 +39,7 @@ type Message struct {
 }
 
 type Client struct {
-	Conn net.Conn
+	Conn        net.Conn
 	LastMessage time.Time
 	StrikeCount int
 }
@@ -47,7 +48,7 @@ func server(messages chan Message) {
 	clients := map[string]*Client{}
 	bannedMfs := map[string]time.Time{}
 	for {
-		msg := <- messages
+		msg := <-messages
 		switch msg.Type {
 		case ClientConnected:
 			addr := msg.Conn.RemoteAddr().(*net.TCPAddr)
@@ -61,18 +62,18 @@ func server(messages chan Message) {
 			}
 
 			if !banned {
-				log.Printf("Client %s connected", sensitive(addr.String()));
+				log.Printf("Client %s connected", sensitive(addr.String()))
 				clients[msg.Conn.RemoteAddr().String()] = &Client{
-					Conn: msg.Conn,
+					Conn:        msg.Conn,
 					LastMessage: time.Now(),
 				}
 			} else {
-				msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", BanLimit - now.Sub(bannedAt).Seconds())))
+				msg.Conn.Write([]byte(fmt.Sprintf("You are banned MF: %f secs left\n", BanLimit-now.Sub(bannedAt).Seconds())))
 				msg.Conn.Close()
 			}
 		case ClientDisconnected:
 			addr := msg.Conn.RemoteAddr().(*net.TCPAddr)
-			log.Printf("Client %s disconnected", sensitive(addr.String()));
+			log.Printf("Client %s disconnected", sensitive(addr.String()))
 			delete(clients, addr.String())
 		case NewMessage:
 			authorAddr := msg.Conn.RemoteAddr().(*net.TCPAddr)
@@ -83,7 +84,7 @@ func server(messages chan Message) {
 					if utf8.ValidString(msg.Text) {
 						author.LastMessage = now
 						author.StrikeCount = 0
-						log.Printf("Client %s sent message %s", sensitive(authorAddr.String()), msg.Text);
+						log.Printf("Client %s sent message %s", sensitive(authorAddr.String()), msg.Text)
 						for _, client := range clients {
 							if client.Conn.RemoteAddr().String() != authorAddr.String() {
 								client.Conn.Write([]byte(msg.Text))
@@ -117,7 +118,7 @@ func client(conn net.Conn, messages chan Message) {
 	for {
 		n, err := conn.Read(buffer)
 		if err != nil {
-			conn.Close();
+			conn.Close()
 			messages <- Message{
 				Type: ClientDisconnected,
 				Conn: conn,
@@ -138,7 +139,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not listen to epic port %s: %s\n", Port, sensitive(err.Error()))
 	}
-	log.Printf("Listening to TCP connections on port %s ...\n", Port);
+	log.Printf("Listening to TCP connections on port %s ...\n", Port)
 
 	messages := make(chan Message)
 	go server(messages)
