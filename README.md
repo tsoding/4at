@@ -5,5 +5,6 @@ Simple Multi-User Chat
 ## Quick Start
 
 ```console
-$ go run main.go
+$ go build
+$ ./4at
 ```
