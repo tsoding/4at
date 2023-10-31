@@ -5,6 +5,6 @@ Simple Multi-User Chat
 ## Quick Start
 
 ```console
-$ go build
+$ rustc -o 4at main.rs
 $ ./4at
 ```
