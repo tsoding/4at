@@ -86,10 +86,7 @@ func server(messages chan Message) {
 						log.Printf("Client %s sent message %s", sensitive(authorAddr.String()), msg.Text);
 						for _, client := range clients {
 							if client.Conn.RemoteAddr().String() != authorAddr.String() {
-								/*_, err := */client.Conn.Write([]byte(msg.Text))
-								// if err != nil {
-								// 	log.Println("Could not send data to %s: %s", sensitive(client.Conn.RemoteAddr().String()), sensitive(err.Error()))
-								// }
+								client.Conn.Write([]byte(msg.Text))
 							}
 						}
 					} else {
@@ -120,7 +117,6 @@ func client(conn net.Conn, messages chan Message) {
 	for {
 		n, err := conn.Read(buffer)
 		if err != nil {
-			// log.Printf("Could not read from %s: %s", sensitive(conn.RemoteAddr().String()), sensitive(err.Error()));
 			conn.Close();
 			messages <- Message{
 				Type: ClientDisconnected,
