@@ -22,7 +22,7 @@ impl<T: fmt::Display> fmt::Display for Sens<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(inner) = self;
         if SAFE_MODE {
-            writeln!(f, "[REDACTED]")
+            "[REDACTED]".fmt(f)
         } else {
             inner.fmt(f)
         }
