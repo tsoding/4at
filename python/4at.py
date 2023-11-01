@@ -5,10 +5,10 @@ import re
 
 PORT = 6969
 SAFE_MODE = True
-MESSAGE_RATE = 1.0  # Messages per second
-BAN_MESSAGE_LIMIT = 10  # Number of messages per MESSAGE_RATE
+MESSAGE_RATE = 1.0  
+BAN_MESSAGE_LIMIT = 10 
 BAN_LIMIT = 10 * 60.0
-UNBAN_TIME = 10 * 60.0  # 10 minutes
+UNBAN_TIME = 10 * 60.0  
 STRIKE_LIMIT = 10
 
 def sensitive(message):
@@ -17,7 +17,7 @@ def sensitive(message):
     return message
 
 connected_clients = {}
-banned_clients = {}  # Store banned clients and their unban time
+banned_clients = {}
 
 def broadcast(message, sender):
     for client_socket, client_info in connected_clients.items():
@@ -58,7 +58,7 @@ def handle_client(client_socket, client_address):
         try:
             message = client_socket.recv(1024)
             if not message:
-                break  # Client disconnected
+                break
             decoded_message = message.decode('utf-8', 'ignore')
             print(f"Received: {decoded_message}")
 
@@ -86,7 +86,7 @@ def handle_client(client_socket, client_address):
                 if connected_clients[client_socket]['strike_count'] >= STRIKE_LIMIT:
                     ban_time = time.time() + BAN_LIMIT
                     print(f"Client {sensitive(client_address)} is banned for {BAN_LIMIT} seconds.")
-                    banned_clients[client_address] = ban_time  # Ban the client
+                    banned_clients[client_address] = ban_time
                     del connected_clients[client_socket]
                     client_socket.send(b"You are banned MF\n")
                     client_socket.close()
