@@ -32,7 +32,8 @@ impl<T: fmt::Display> fmt::Display for Sens<T> {
 
 enum Message {
     ClientConnected {
-        author: Arc<TcpStream>
+        author: Arc<TcpStream>,
+        author_addr: SocketAddr,
     },
     ClientDisconnected {
         author_addr: SocketAddr,
@@ -55,22 +56,21 @@ fn server(messages: Receiver<Message>) -> Result<()> {
     loop {
         let msg = messages.recv().expect("The server receiver is not hung up");
         match msg {
-            Message::ClientConnected{author} => {
-                let author_addr = author.peer_addr().expect("TODO: cache the peer addr of the connection");
-                let mut banned_at = banned_mfs.remove(&author_addr.ip());
+            Message::ClientConnected{author, author_addr} => {
                 let now = SystemTime::now();
-
-                banned_at = banned_at.and_then(|banned_at| {
-                    let diff = now.duration_since(banned_at).expect("TODO: don't crash if the clock went backwards");
+                let banned_at_and_diff = banned_mfs.remove(&author_addr.ip()).and_then(|banned_at| {
+                    let diff = now.duration_since(banned_at).unwrap_or_else(|err| {
+                        eprintln!("ERROR: ban time check on client connection: the clock might have gone backwards: {err}");
+                        Duration::from_secs(0)
+                    });
                     if diff >= BAN_LIMIT {
                         None
                     } else {
-                        Some(banned_at)
+                        Some((banned_at, diff))
                     }
                 });
 
-                if let Some(banned_at) = banned_at {
-                    let diff = now.duration_since(banned_at).expect("TODO: don't crash if the clock went backwards");
+                if let Some((banned_at, diff)) = banned_at_and_diff {
                     banned_mfs.insert(author_addr.ip().clone(), banned_at);
                     let mut author = author.as_ref();
                     let secs = (BAN_LIMIT - diff).as_secs_f32();
@@ -97,7 +97,10 @@ fn server(messages: Receiver<Message>) -> Result<()> {
             Message::NewMessage{author_addr, bytes} => {
                 if let Some(author) = clients.get_mut(&author_addr) {
                     let now = SystemTime::now();
-                    let diff = now.duration_since(author.last_message).expect("TODO: don't crash if the clock went backwards");
+                    let diff = now.duration_since(author.last_message).unwrap_or_else(|err| {
+                        eprintln!("ERROR: message rate check on new message: the clock might have gone backwards: {err}");
+                        Duration::from_secs(0)
+                    });
                     if diff >= MESSAGE_RATE {
                         if let Ok(text) = str::from_utf8(&bytes) {
                             author.last_message = now;
@@ -148,7 +151,7 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
     let author_addr = stream.peer_addr().map_err(|err| {
         eprintln!("ERROR: could not get peer address: {err}", err = Sens(err));
     })?;
-    messages.send(Message::ClientConnected{author: stream.clone()}).map_err(|err| {
+    messages.send(Message::ClientConnected{author: stream.clone(), author_addr}).map_err(|err| {
         eprintln!("ERROR: could not send message from {author_addr} to the server thread: {err}", author_addr = Sens(author_addr), err = Sens(err))
     })?;
     let mut buffer = Vec::new();
