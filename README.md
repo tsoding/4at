@@ -5,6 +5,7 @@ Simple Multi-User Chat
 ## Quick Start
 
 ```console
-$ rustc -o 4at main.rs
-$ ./4at
+$ rustc server.rs
+$ ./server
+$ telnet 127.0.0.1 6969
 ```
