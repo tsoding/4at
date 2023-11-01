@@ -1,6 +1,8 @@
 # 4at
 
-Simple Multi-User Chat
+Simple Multi-User Chat. 
+
+*The legacy Go version can be found in [./legacy-go-version](./legacy-go-version)*
 
 ## Quick Start
 
