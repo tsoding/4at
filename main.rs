@@ -11,6 +11,7 @@ use std::str;
 
 type Result<T> = result::Result<T, ()>;
 
+const PORT: u16 = 6969;
 const SAFE_MODE: bool = false;
 const BAN_LIMIT: Duration = Duration::from_secs(10*60);
 const MESSAGE_RATE: Duration = Duration::from_secs(1);
@@ -180,9 +181,9 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let address = "0.0.0.0:6969";
-    let listener = TcpListener::bind(address).map_err(|err| {
-        eprintln!("ERROR: could not bind {address}: {err}", address = Sens(address), err = Sens(err))
+    let address = format!("0.0.0.0:{PORT}");
+    let listener = TcpListener::bind(&address).map_err(|err| {
+        eprintln!("ERROR: could not bind {address}: {err}", address = Sens(&address), err = Sens(err))
     })?;
     println!("INFO: listening to {}", Sens(address));
 
