@@ -98,11 +98,11 @@ fn server(messages: Receiver<Message>) -> Result<()> {
                     let now = SystemTime::now();
                     let diff = now.duration_since(author.last_message).expect("TODO: don't crash if the clock went backwards");
                     if diff >= MESSAGE_RATE {
-                        if let Ok(_text) = str::from_utf8(&bytes) {
+                        if let Ok(text) = str::from_utf8(&bytes) {
                             println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
                             for (addr, client) in clients.iter() {
                                 if *addr != author_addr {
-                                    let _ = client.conn.as_ref().write(&bytes).map_err(|err| {
+                                    let _ = writeln!(client.conn.as_ref(), "{text}").map_err(|err| {
                                         eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
                                     });
                                 }
@@ -118,6 +118,7 @@ fn server(messages: Receiver<Message>) -> Result<()> {
                                 let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
                                     eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
                                 });
+                                clients.remove(&author_addr);
                             }
                         }
                     } else {
@@ -131,6 +132,7 @@ fn server(messages: Receiver<Message>) -> Result<()> {
                             let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
                                 eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
                             });
+                            clients.remove(&author_addr);
                         }
                     }
                 }
