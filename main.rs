@@ -99,6 +99,8 @@ fn server(messages: Receiver<Message>) -> Result<()> {
                     let diff = now.duration_since(author.last_message).expect("TODO: don't crash if the clock went backwards");
                     if diff >= MESSAGE_RATE {
                         if let Ok(text) = str::from_utf8(&bytes) {
+                            author.last_message = now;
+                            author.strike_count = 0;
                             println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
                             for (addr, client) in clients.iter() {
                                 if *addr != author_addr {
