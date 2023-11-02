@@ -1,4 +1,5 @@
 use std::io::{stdout, Read, Write, ErrorKind};
+use std::env;
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
 use crossterm::{QueueableCommand};
@@ -23,7 +24,11 @@ fn chat_window(stdout: &mut impl Write, chat: &[String], boundary: Rect) {
 }
 
 fn main() {
-    let mut stream = TcpStream::connect("127.0.0.1:6969").unwrap();
+    let mut args = env::args();
+    let _program = args.next().expect("program name");
+    let ip = args.next().expect("provide ip mf");
+
+    let mut stream = TcpStream::connect(&format!("{ip}:6969")).unwrap();
     let _ = stream.set_nonblocking(true).unwrap();
 
     let mut stdout = stdout();
