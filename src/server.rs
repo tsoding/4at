@@ -205,18 +205,23 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn generate_token() -> Result<String> {
     let mut buffer = [0; 16];
     let _ = getrandom(&mut buffer).map_err(|err| {
         eprintln!("ERROR: could not generate random access token: {err}");
-    });
+    })?;
 
     let mut token = String::new();
     for x in buffer.iter() {
         let _ = write!(&mut token, "{x:02X}");
     }
+    Ok(token)
+}
 
-    println!("Token: {token}");
+fn main() -> Result<()> {
+    let token = generate_token()?;
+
+    println!("INFO: Token: {token}");
 
     let address = format!("0.0.0.0:{PORT}");
     let listener = TcpListener::bind(&address).map_err(|err| {
