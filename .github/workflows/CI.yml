@@ -23,7 +23,6 @@ jobs:
         run: cargo build --release
 
       - name: Artifact's Upload
-        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v3
         with:
           name: 4at-${{ runner.os }}-${{ runner.arch }}
