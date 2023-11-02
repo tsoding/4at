@@ -60,6 +60,9 @@ fn main() {
                                 prompt.push(x);
                             }
                         }
+                        KeyCode::Esc => {
+                            prompt.clear();
+                        }
                         KeyCode::Enter => {
                             stream.write(prompt.as_bytes()).unwrap();
                             chat.push(prompt.clone());
