@@ -27,6 +27,8 @@ jobs:
         with:
           name: 4at-${{ runner.os }}-${{ runner.arch }}
           path: |
-            !target/release/*.d
-            target/release/client*
-            target/release/server*
+            target/release/client
+            target/release/server
+            target/release/client.exe
+            target/release/server.exe
+
