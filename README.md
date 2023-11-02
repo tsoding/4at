@@ -6,8 +6,18 @@ Simple Multi-User Chat.
 
 ## Quick Start
 
+### Server
+
 ```console
-$ rustc server.rs
-$ ./server
+$ cargo run
+Token: <authentication token>
+<logs>
+```
+
+### Client
+
+```console
 $ telnet 127.0.0.1 6969
+Token: <type the token from server here>
+<type messages>
 ```
