@@ -53,123 +53,144 @@ struct Client {
     authed: bool,
 }
 
+struct Server {
+    clients: HashMap<SocketAddr, Client>,
+    banned_mfs: HashMap<IpAddr, SystemTime>,
+    token: String,
+}
+
+impl Server {
+    fn from_token(token: String) -> Self {
+        Self {
+            clients: HashMap::new(),
+            banned_mfs: HashMap::new(),
+            token,
+        }
+    }
+
+    fn client_connected(&mut self, author: Arc<TcpStream>, author_addr: SocketAddr) {
+        let now = SystemTime::now();
+        let banned_at_and_diff = self.banned_mfs.remove(&author_addr.ip()).and_then(|banned_at| {
+            let diff = now.duration_since(banned_at).unwrap_or_else(|err| {
+                eprintln!("ERROR: ban time check on client connection: the clock might have gone backwards: {err}");
+                Duration::from_secs(0)
+            });
+            if diff >= BAN_LIMIT {
+                None
+            } else {
+                Some((banned_at, diff))
+            }
+        });
+
+        if let Some((banned_at, diff)) = banned_at_and_diff {
+            self.banned_mfs.insert(author_addr.ip().clone(), banned_at);
+            let mut author = author.as_ref();
+            let secs = (BAN_LIMIT - diff).as_secs_f32();
+            println!("INFO: Client {author_addr} tried to connected, by that MF is banned for {secs} secs", author_addr = Sens(author_addr));
+            let _ = writeln!(author, "You are banned MF: {secs} secs left").map_err(|err| {
+                eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+            });
+            let _ = author.shutdown(Shutdown::Both).map_err(|err| {
+                eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+            });
+        } else {
+            println!("INFO: Client {author_addr} connected", author_addr = Sens(author_addr));
+            self.clients.insert(author_addr.clone(), Client {
+                conn: author.clone(),
+                last_message: now - 2*MESSAGE_RATE,
+                strike_count: 0,
+                authed: false,
+            });
+
+            let _ = write!(author.as_ref(), "Token: ").map_err(|err| {
+                eprintln!("ERROR: could not send Token prompt to {}: {}", Sens(author_addr), Sens(err));
+            });
+        }
+    }
+
+    fn client_disconnected(&mut self, author_addr: SocketAddr) {
+        println!("INFO: Client {author_addr} disconnected", author_addr = Sens(author_addr));
+        self.clients.remove(&author_addr);
+    }
+
+    fn new_message(&mut self, author_addr: SocketAddr, bytes: &[u8]) {
+        if let Some(author) = self.clients.get_mut(&author_addr) {
+            let now = SystemTime::now();
+            let diff = now.duration_since(author.last_message).unwrap_or_else(|err| {
+                eprintln!("ERROR: message rate check on new message: the clock might have gone backwards: {err}");
+                Duration::from_secs(0)
+            });
+            if diff >= MESSAGE_RATE {
+                if let Ok(text) = str::from_utf8(&bytes) {
+                    author.last_message = now;
+                    author.strike_count = 0;
+                    if author.authed {
+                        println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
+                        for (addr, client) in self.clients.iter() {
+                            if *addr != author_addr && client.authed {
+                                let _ = writeln!(client.conn.as_ref(), "{text}").map_err(|err| {
+                                    eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
+                                });
+                            }
+                        }
+                    } else {
+                        if text == self.token {
+                            author.authed = true;
+                            println!("INFO: {} authorized!", Sens(author_addr));
+                            let _ = writeln!(author.conn.as_ref(), "Welcome to the Club buddy!").map_err(|err| {
+                                eprintln!("ERROR: could not send welcome message to {}: {}", Sens(author_addr), Sens(err));
+                            });
+                        } else {
+                            println!("INFO: {} failed authorization!", Sens(author_addr));
+                            let _ = writeln!(author.conn.as_ref(), "Invalid token! Bruh!").map_err(|err| {
+                                eprintln!("ERROR: could not notify client {} about invalid token: {}", Sens(author_addr), Sens(err));
+                            });
+                            let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
+                                eprintln!("ERROR: could not shutdown {}: {}", Sens(author_addr), Sens(err));
+                            });
+                            self.clients.remove(&author_addr);
+                        }
+                    }
+                } else {
+                    author.strike_count += 1;
+                    if author.strike_count >= STRIKE_LIMIT {
+                        println!("INFO: Client {author_addr} got banned", author_addr = Sens(author_addr));
+                        self.banned_mfs.insert(author_addr.ip().clone(), now);
+                        let _ = writeln!(author.conn.as_ref(), "You are banned MF").map_err(|err| {
+                            eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+                        });
+                        let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
+                            eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+                        });
+                        self.clients.remove(&author_addr);
+                    }
+                }
+            } else {
+                author.strike_count += 1;
+                if author.strike_count >= STRIKE_LIMIT {
+                    println!("INFO: Client {author_addr} got banned", author_addr = Sens(author_addr));
+                    self.banned_mfs.insert(author_addr.ip().clone(), now);
+                    let _ = writeln!(author.conn.as_ref(), "You are banned MF").map_err(|err| {
+                        eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+                    });
+                    let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
+                        eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+                    });
+                    self.clients.remove(&author_addr);
+                }
+            }
+        }
+    }
+}
+
 fn server(messages: Receiver<Message>, token: String) -> Result<()> {
-    let mut clients = HashMap::<SocketAddr, Client>::new();
-    let mut banned_mfs = HashMap::<IpAddr, SystemTime>::new();
+    let mut server = Server::from_token(token);
     loop {
         let msg = messages.recv().expect("The server receiver is not hung up");
         match msg {
-            Message::ClientConnected{author, author_addr} => {
-                let now = SystemTime::now();
-                let banned_at_and_diff = banned_mfs.remove(&author_addr.ip()).and_then(|banned_at| {
-                    let diff = now.duration_since(banned_at).unwrap_or_else(|err| {
-                        eprintln!("ERROR: ban time check on client connection: the clock might have gone backwards: {err}");
-                        Duration::from_secs(0)
-                    });
-                    if diff >= BAN_LIMIT {
-                        None
-                    } else {
-                        Some((banned_at, diff))
-                    }
-                });
-
-                if let Some((banned_at, diff)) = banned_at_and_diff {
-                    banned_mfs.insert(author_addr.ip().clone(), banned_at);
-                    let mut author = author.as_ref();
-                    let secs = (BAN_LIMIT - diff).as_secs_f32();
-                    println!("INFO: Client {author_addr} tried to connected, by that MF is banned for {secs} secs", author_addr = Sens(author_addr));
-                    let _ = writeln!(author, "You are banned MF: {secs} secs left").map_err(|err| {
-                        eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-                    });
-                    let _ = author.shutdown(Shutdown::Both).map_err(|err| {
-                        eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-                    });
-                } else {
-                    println!("INFO: Client {author_addr} connected", author_addr = Sens(author_addr));
-                    clients.insert(author_addr.clone(), Client {
-                        conn: author.clone(),
-                        last_message: now - 2*MESSAGE_RATE,
-                        strike_count: 0,
-                        authed: false,
-                    });
-
-                    let _ = write!(author.as_ref(), "Token: ").map_err(|err| {
-                        eprintln!("ERROR: could not send Token prompt to {}: {}", Sens(author_addr), Sens(err));
-                    });
-                }
-            },
-            Message::ClientDisconnected{author_addr} => {
-                println!("INFO: Client {author_addr} disconnected", author_addr = Sens(author_addr));
-                clients.remove(&author_addr);
-            },
-            Message::NewMessage{author_addr, bytes} => {
-                if let Some(author) = clients.get_mut(&author_addr) {
-                    let now = SystemTime::now();
-                    let diff = now.duration_since(author.last_message).unwrap_or_else(|err| {
-                        eprintln!("ERROR: message rate check on new message: the clock might have gone backwards: {err}");
-                        Duration::from_secs(0)
-                    });
-                    if diff >= MESSAGE_RATE {
-                        if let Ok(text) = str::from_utf8(&bytes) {
-                            author.last_message = now;
-                            author.strike_count = 0;
-                            if author.authed {
-                                println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
-                                for (addr, client) in clients.iter() {
-                                    if *addr != author_addr && client.authed {
-                                        let _ = writeln!(client.conn.as_ref(), "{text}").map_err(|err| {
-                                            eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
-                                        });
-                                    }
-                                }
-                            } else {
-                                if text == token {
-                                    author.authed = true;
-                                    println!("INFO: {} authorized!", Sens(author_addr));
-                                    let _ = writeln!(author.conn.as_ref(), "Welcome to the Club buddy!").map_err(|err| {
-                                        eprintln!("ERROR: could not send welcome message to {}: {}", Sens(author_addr), Sens(err));
-                                    });
-                                } else {
-                                    println!("INFO: {} failed authorization!", Sens(author_addr));
-                                    let _ = writeln!(author.conn.as_ref(), "Invalid token! Bruh!").map_err(|err| {
-                                        eprintln!("ERROR: could not notify client {} about invalid token: {}", Sens(author_addr), Sens(err));
-                                    });
-                                    let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
-                                        eprintln!("ERROR: could not shutdown {}: {}", Sens(author_addr), Sens(err));
-                                    });
-                                    clients.remove(&author_addr);
-                                }
-                            }
-                        } else {
-                            author.strike_count += 1;
-                            if author.strike_count >= STRIKE_LIMIT {
-                                println!("INFO: Client {author_addr} got banned", author_addr = Sens(author_addr));
-                                banned_mfs.insert(author_addr.ip().clone(), now);
-                                let _ = writeln!(author.conn.as_ref(), "You are banned MF").map_err(|err| {
-                                    eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-                                });
-                                let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
-                                    eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-                                });
-                                clients.remove(&author_addr);
-                            }
-                        }
-                    } else {
-                        author.strike_count += 1;
-                        if author.strike_count >= STRIKE_LIMIT {
-                            println!("INFO: Client {author_addr} got banned", author_addr = Sens(author_addr));
-                            banned_mfs.insert(author_addr.ip().clone(), now);
-                            let _ = writeln!(author.conn.as_ref(), "You are banned MF").map_err(|err| {
-                                eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-                            });
-                            let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
-                                eprintln!("ERROR: could not shutdown socket for {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-                            });
-                            clients.remove(&author_addr);
-                        }
-                    }
-                }
-            },
+            Message::ClientConnected{author, author_addr} => server.client_connected(author, author_addr),
+            Message::ClientDisconnected{author_addr} => server.client_disconnected(author_addr),
+            Message::NewMessage{author_addr, bytes} => server.new_message(author_addr, &bytes),
         }
     }
 }
