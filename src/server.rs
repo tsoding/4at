@@ -42,7 +42,7 @@ enum Message {
     },
     NewMessage {
         author_addr: SocketAddr,
-        bytes: Vec<u8>
+        bytes: Box<[u8]>
     },
 }
 
@@ -182,8 +182,7 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
     messages.send(Message::ClientConnected{author: stream.clone(), author_addr}).map_err(|err| {
         eprintln!("ERROR: could not send message from {author_addr} to the server thread: {err}", author_addr = Sens(author_addr), err = Sens(err))
     })?;
-    let mut buffer = Vec::new();
-    buffer.resize(64, 0);
+    let mut buffer = [0; 64];
     loop {
         let n = stream.as_ref().read(&mut buffer).map_err(|err| {
             eprintln!("ERROR: could not read message from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
@@ -192,12 +191,7 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
             });
         })?;
         if n > 0 {
-            let mut bytes = Vec::new();
-            for x in &buffer[0..n] {
-                if *x >= 32 {
-                    bytes.push(*x)
-                }
-            }
+            let bytes = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
             messages.send(Message::NewMessage{author_addr, bytes}).map_err(|err| {
                 eprintln!("ERROR: could not send message to the server thread: {err}");
             })?;
