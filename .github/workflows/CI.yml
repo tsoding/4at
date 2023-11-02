@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - name: Building 4at
+        run: cargo build --release
+
+      - name: Artifact's Upload
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v3
+        with:
+          name: 4at-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            !target/release/*.d
+            target/release/client*
+            target/release/server*
