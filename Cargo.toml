@@ -9,6 +9,11 @@ edition = "2021"
 name = "server"
 path = "./src/server.rs"
 
+[[bin]]
+name = "client"
+path = "./src/client.rs"
+
 [dependencies]
+crossterm = "0.27.0"
 getrandom = "0.2.10"
 rustls = "0.21.8"
