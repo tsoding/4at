@@ -9,7 +9,7 @@ Simple Multi-User Chat.
 ### Server
 
 ```console
-$ cargo run
+$ cargo run --bin server
 Token: <authentication token>
 <logs>
 ```
@@ -17,7 +17,7 @@ Token: <authentication token>
 ### Client
 
 ```console
-$ telnet 127.0.0.1 6969
-Token: <type the token from server here>
+$ cargo run --bin client 127.0.0.1
+<type the token from server>
 <type messages>
 ```
