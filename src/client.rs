@@ -2,6 +2,7 @@ use std::io::{self, stdout, Read, Write, ErrorKind};
 use std::env;
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
+use crossterm::style::{Print};
 use crossterm::{QueueableCommand};
 use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers};
 use std::time::Duration;
@@ -13,13 +14,12 @@ struct Rect {
     x: usize, y: usize, w: usize, h: usize,
 }
 
-fn chat_window(stdout: &mut impl Write, chat: &[String], boundary: Rect) -> io::Result<()> {
+fn chat_window(qc: &mut impl QueueableCommand, chat: &[String], boundary: Rect) -> io::Result<()> {
     let n = chat.len();
     let m = n.checked_sub(boundary.h).unwrap_or(0);
     for (dy, line) in chat.iter().skip(m).enumerate() {
-        stdout.queue(MoveTo(boundary.x as u16, (boundary.y + dy) as u16))?;
-        let bytes = line.as_bytes();
-        stdout.write(bytes.get(0..boundary.w).unwrap_or(bytes))?;
+        qc.queue(MoveTo(boundary.x as u16, (boundary.y + dy) as u16))?;
+        qc.queue(Print(line.get(0..boundary.w).unwrap_or(&line)))?;
     }
     Ok(())
 }
@@ -127,13 +127,10 @@ fn main() -> io::Result<()> {
         })?;
 
         stdout.queue(MoveTo(0, h-2))?;
-        stdout.write(bar.as_bytes())?;
+        stdout.queue(Print(&bar))?;
 
         stdout.queue(MoveTo(0, h-1))?;
-        {
-            let bytes = prompt.as_bytes();
-            stdout.write(bytes.get(0..w as usize).unwrap_or(bytes))?;
-        }
+        stdout.queue(Print(prompt.get(0..w as usize).unwrap_or(&prompt)))?;
 
         stdout.flush()?;
 
