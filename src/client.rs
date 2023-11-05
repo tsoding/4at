@@ -2,7 +2,7 @@ use std::io::{self, stdout, Read, Write, ErrorKind};
 use std::env;
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
-use crossterm::style::{Print};
+use crossterm::style::{Print, SetBackgroundColor, SetForegroundColor, Color, ResetColor};
 use crossterm::{QueueableCommand};
 use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers};
 use std::time::Duration;
@@ -50,6 +50,20 @@ fn sanitize_terminal_output(bytes: &[u8]) -> Option<String> {
     }
 }
 
+fn status_bar(qc: &mut impl QueueableCommand, label: &str, x: usize, y: usize, w: usize) -> io::Result<()> {
+    if label.len() <= w {
+        qc.queue(MoveTo(x as u16, y as u16))?;
+        qc.queue(SetBackgroundColor(Color::White))?;
+        qc.queue(SetForegroundColor(Color::Black))?;
+        qc.queue(Print(label))?;
+        for _ in 0..w as usize-label.len() {
+            qc.queue(Print(" "))?;
+        }
+        qc.queue(ResetColor)?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut args = env::args();
     let _program = args.next().expect("program name");
@@ -61,8 +75,6 @@ fn main() -> io::Result<()> {
     let mut stdout = stdout();
     let _raw_mode = RawMode::enable()?;
     let (mut w, mut h) = terminal::size()?;
-    let bar_char = "═";
-    let mut bar = bar_char.repeat(w as usize);
     let mut quit = false;
     let mut prompt = String::new();
     let mut chat = Vec::new();
@@ -73,7 +85,6 @@ fn main() -> io::Result<()> {
                 Event::Resize(nw, nh) => {
                     w = nw;
                     h = nh;
-                    bar = bar_char.repeat(w as usize);
                 }
                 Event::Paste(data) => {
                     prompt.push_str(&data);
@@ -119,18 +130,17 @@ fn main() -> io::Result<()> {
 
         stdout.queue(Clear(ClearType::All))?;
 
+        stdout.queue(MoveTo(0, 0))?;
+        status_bar(&mut stdout, "4at", 0, 0, w.into())?;
         chat_window(&mut stdout, &chat, Rect {
             x: 0,
-            y: 0,
+            y: 1,
             w: w as usize,
-            h: h as usize-2,
+            h: h as usize-3,
         })?;
-
-        stdout.queue(MoveTo(0, h-2))?;
-        stdout.queue(Print(&bar))?;
-
+        status_bar(&mut stdout, "Status: Connected", 0, h as usize-2, w.into())?;
         stdout.queue(MoveTo(0, h-1))?;
-        stdout.queue(Print(prompt.get(0..w as usize).unwrap_or(&prompt)))?;
+        stdout.queue(Print(prompt.get(0..(w - 2) as usize).unwrap_or(&prompt)))?;
 
         stdout.flush()?;
 
