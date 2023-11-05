@@ -1,7 +1,7 @@
 use std::io::{self, stdout, Read, Write, ErrorKind};
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
-use crossterm::style::{Print, SetBackgroundColor, SetForegroundColor, Color, ResetColor};
+use crossterm::style::{Print, PrintStyledContent, SetBackgroundColor, SetForegroundColor, Color, ResetColor, Stylize};
 use crossterm::{QueueableCommand};
 use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers};
 use std::time::Duration;
@@ -13,12 +13,12 @@ struct Rect {
     x: usize, y: usize, w: usize, h: usize,
 }
 
-fn chat_window(qc: &mut impl QueueableCommand, chat: &[String], boundary: Rect) -> io::Result<()> {
+fn chat_window(qc: &mut impl QueueableCommand, chat: &[(String, Color)], boundary: Rect) -> io::Result<()> {
     let n = chat.len();
     let m = n.checked_sub(boundary.h).unwrap_or(0);
-    for (dy, line) in chat.iter().skip(m).enumerate() {
+    for (dy, (line, color)) in chat.iter().skip(m).enumerate() {
         qc.queue(MoveTo(boundary.x as u16, (boundary.y + dy) as u16))?;
-        qc.queue(Print(line.get(0..boundary.w).unwrap_or(&line)))?;
+        qc.queue(PrintStyledContent(line.get(0..boundary.w).unwrap_or(&line).with(*color)))?;
     }
     Ok(())
 }
@@ -63,6 +63,11 @@ fn status_bar(qc: &mut impl QueueableCommand, label: &str, x: usize, y: usize, w
     Ok(())
 }
 
+fn parse_command<'a>(prompt: &'a str) -> Option<(&'a str, &'a str)> {
+    let prompt = prompt.strip_prefix("/")?;
+    prompt.split_once(" ").or(Some((prompt, "")))
+}
+
 fn main() -> io::Result<()> {
     let mut stream: Option<TcpStream> = None;
     let mut stdout = stdout();
@@ -70,7 +75,7 @@ fn main() -> io::Result<()> {
     let (mut w, mut h) = terminal::size()?;
     let mut quit = false;
     let mut prompt = String::new();
-    let mut chat = Vec::new();
+    let mut chat: Vec<(String, Color)> = Vec::new();
     let mut buf = [0; 64];
     while !quit {
         while poll(Duration::ZERO)? {
@@ -97,20 +102,28 @@ fn main() -> io::Result<()> {
                         KeyCode::Enter => {
                             if let Some(ref mut stream) = &mut stream {
                                 stream.write(prompt.as_bytes())?;
-                                chat.push(prompt.clone());
+                                chat.push((prompt.clone(), Color::White));
                             } else {
-                                if let Some(ip) = prompt.strip_prefix("/connect ") {
-                                    stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
-                                        stream.set_nonblocking(true)?;
-                                        Ok(stream)
-                                    }).map_err(|err| {
-                                        chat.push(format!("ERROR: Could not connect to {ip}: {err}"))
-                                    }).ok();
-                                    // TODO: handle /connect when you are already connected
-                                    // TODO: implement /disconnect
-                                    // TODO: implement /quit
+                                // TODO: tab autocompletion for slash commands
+                                if let Some((command, argument)) = parse_command(&prompt) {
+                                    match command {
+                                        // TODO: implement /disconnect
+                                        // TODO: implement /help
+                                        "connect" => {
+                                            // TODO: handle situation /connect when you are already connected
+                                            let ip = argument.trim();
+                                            stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
+                                                stream.set_nonblocking(true)?;
+                                                Ok(stream)
+                                            }).map_err(|err| {
+                                                chat.push((format!("Could not connect to {ip}: {err}"), Color::Red))
+                                            }).ok();
+                                        }
+                                        "quit" => quit = true,
+                                        _ => chat.push((format!("Unknown command `{command}`"), Color::Red)),
+                                    }
                                 } else {
-                                    chat.push("You are offline. Use /connect <ip> to connect to a server.".to_string());
+                                    chat.push(("You are offline. Use /connect <ip> to connect to a server.".to_string(), Color::Blue));
                                 }
                             }
                             prompt.clear();
@@ -127,16 +140,16 @@ fn main() -> io::Result<()> {
                 Ok(n) => {
                     if n > 0 {
                         if let Some(line) = sanitize_terminal_output(&buf[..n]) {
-                            chat.push(line)
+                            chat.push((line, Color::White))
                         }
                     } else {
                         stream = None;
-                        chat.push(format!("Server closed the connection"));
+                        chat.push((format!("Server closed the connection"), Color::Blue));
                     }
                 }
                 Err(err) => if err.kind() != ErrorKind::WouldBlock {
                     stream = None;
-                    chat.push(format!("ERROR: {err}"));
+                    chat.push((format!("Connection Error: {err}"), Color::Red));
                 }
             }
         }
