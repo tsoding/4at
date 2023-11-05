@@ -1,6 +1,6 @@
 # 4at
 
-Simple Multi-User Chat. 
+Simple Multi-User Chat.
 
 *The code has fallen to "Rewrite it in Rust" disease. You can find the legacy Go version in [./legacy-go-version](./legacy-go-version) if you still need it*
 
@@ -17,7 +17,7 @@ Token: <authentication token>
 ### Client
 
 ```console
-$ cargo run --bin client 127.0.0.1
-<type the token from server>
-<type messages>
+$ cargo run --bin client
+> /connect <server ip>
+> <authentication token>
 ```
