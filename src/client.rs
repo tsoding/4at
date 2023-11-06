@@ -111,6 +111,38 @@ impl Prompt {
         self.buffer.insert(self.cursor, x);
         self.cursor += 1;
     }
+
+    fn left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    fn right(&mut self) {
+        if self.cursor < self.buffer.len() {
+            self.cursor += 1;
+        }
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+            self.buffer.remove(self.cursor);
+        }
+    }
+
+    fn before_cursor(&self) -> &str {
+        &self.buffer[..self.cursor]
+    }
+
+    fn after_cursor(&self) -> &str {
+        &self.buffer[self.cursor..]
+    }
+
+    fn clear(&mut self) {
+        self.buffer.clear();
+        self.cursor = 0;
+    }
 }
 
 #[derive(Default)]
@@ -225,29 +257,17 @@ fn main() -> io::Result<()> {
                         // TODO: message history scrolling via up/down
                         // TODO: jump by words
                         // TODO: basic readline navigation keybindings
-                        KeyCode::Left => {
-                            if prompt.cursor > 0 {
-                                prompt.cursor -= 1;
-                            }
-                        }
-                        KeyCode::Right => {
-                            if prompt.cursor < prompt.buffer.len() {
-                                prompt.cursor += 1;
-                            }
-                        }
-                        KeyCode::Backspace => {
-                            if prompt.cursor > 0 {
-                                prompt.cursor -= 1;
-                                prompt.buffer.remove(prompt.cursor);
-                            }
-                        }
+                        KeyCode::Left => prompt.left(),
+                        KeyCode::Right => prompt.right(),
+                        KeyCode::Backspace => prompt.backspace(),
                         // TODO: delete current character by KeyCode::Delete
+                        // TODO: delete word by Ctrl+W
                         KeyCode::Tab => {
-                            if let Some((prefix, "")) = parse_command(&prompt.buffer[..prompt.cursor]) {
+                            if let Some((prefix, "")) = parse_command(prompt.before_cursor()) {
                                 if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(prefix)) {
                                     // TODO: tab autocompletion should scroll through different
                                     // variants on each TAB press
-                                    prompt.buffer = format!("/{name}{rest}", name = command.name, rest = &prompt.buffer[prompt.cursor..]);
+                                    prompt.buffer = format!("/{name}{rest}", name = command.name, rest = &prompt.after_cursor());
                                     prompt.cursor = command.name.len() + 1;
                                 }
                             }
@@ -262,13 +282,15 @@ fn main() -> io::Result<()> {
                             } else {
                                 if let Some(ref mut stream) = &mut client.stream {
                                     stream.write(prompt.buffer.as_bytes())?;
+                                    // TODO: don't display the message if it was not delivered
+                                    // Maybe the server should actually send your own message back.
+                                    // Not sending it back made sense in the telnet times.
                                     chat_msg!(&mut client.chat, "{text}", text = &prompt.buffer);
                                 } else {
                                     chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
                                 }
                             }
-                            prompt.buffer.clear();
-                            prompt.cursor = 0;
+                            prompt.clear();
                         }
                         _ => {},
                     }
