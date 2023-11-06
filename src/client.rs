@@ -112,6 +112,11 @@ impl Prompt {
         self.cursor += 1;
     }
 
+    fn insert_str(&mut self, text: &str) {
+        self.buffer.insert_str(self.cursor, text);
+        self.cursor += text.len();
+    }
+
     fn left(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
@@ -241,10 +246,7 @@ fn main() -> io::Result<()> {
                     w = nw;
                     h = nh;
                 }
-                Event::Paste(data) => {
-                    // TODO: Copy-Paste must insert text at the place of the cursor
-                    prompt.buffer.push_str(&data);
-                }
+                Event::Paste(data) => prompt.insert_str(&data),
                 Event::Key(event) => {
                     match event.code {
                         KeyCode::Char(x) => {
