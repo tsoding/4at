@@ -131,11 +131,48 @@ fn quit_command(client: &mut Client, _argument: &str) {
     client.quit = true;
 }
 
-// TODO: implement /help
-const COMMANDS: [(&str, fn(&mut Client, &str)); 3] = [ 
-    ("connect", connect_command),
-    ("disconnect", disconnect_command),
-    ("quit", quit_command),
+fn help_command(client: &mut Client, argument: &str) {
+    let name = argument.trim();
+    if name.is_empty() {
+        for command in COMMANDS.iter() {
+            chat_info!(client.chat, "/{name} - {description}", name = command.name, description = command.description);
+        }
+    } else {
+        if let Some(command) = COMMANDS.iter().find(|command| command.name == name) {
+            chat_info!(client.chat, "/{name} - {description}", name = command.name, description = command.description);
+        } else {
+            chat_error!(&mut client.chat, "Unknown command `/{name}`");
+        }
+    }
+}
+
+struct Command {
+    name: &'static str,
+    run: fn(&mut Client, &str),
+    description: &'static str,
+}
+
+const COMMANDS: [Command; 4] = [
+    Command {
+        name: "connect",
+        run: connect_command,
+        description: "Connect to a server by IP"
+    },
+    Command {
+        name: "disconnect",
+        run: disconnect_command,
+        description: "Disconnect from the server you are currently connected to"
+    },
+    Command {
+        name: "quit",
+        run: quit_command,
+        description: "Close the chat"
+    },
+    Command {
+        name: "help",
+        run: help_command,
+        description: "Print help",
+    },
 ];
 
 fn main() -> io::Result<()> {
@@ -172,11 +209,11 @@ fn main() -> io::Result<()> {
                         }
                         KeyCode::Enter => {
                             // TODO: tab autocompletion for slash commands
-                            if let Some((command, argument)) = parse_command(&prompt) {
-                                if let Some((_, action)) = COMMANDS.iter().find(|(name, _)| name == &command) {
-                                    action(&mut client, &argument);
+                            if let Some((name, argument)) = parse_command(&prompt) {
+                                if let Some(command) = COMMANDS.iter().find(|command| command.name == name) {
+                                    (command.run)(&mut client, &argument);
                                 } else {
-                                    chat_error!(&mut client.chat, "Unknown command `/{command}`");
+                                    chat_error!(&mut client.chat, "Unknown command `/{name}`");
                                 }
                             } else {
                                 if let Some(ref mut stream) = &mut client.stream {
