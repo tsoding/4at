@@ -103,6 +103,16 @@ struct Prompt {
     cursor: usize,
 }
 
+impl Prompt {
+    fn insert(&mut self, x: char) {
+        if self.cursor > self.buffer.len() {
+            self.cursor = self.buffer.len()
+        }
+        self.buffer.insert(self.cursor, x);
+        self.cursor += 1;
+    }
+}
+
 #[derive(Default)]
 struct Client {
     stream: Option<TcpStream>,
@@ -209,11 +219,7 @@ fn main() -> io::Result<()> {
                             if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
                                 client.quit = true;
                             } else {
-                                if prompt.cursor > prompt.buffer.len() {
-                                    prompt.cursor = prompt.buffer.len()
-                                }
-                                prompt.buffer.insert(prompt.cursor, x);
-                                prompt.cursor += 1;
+                                prompt.insert(x);
                             }
                         }
                         // TODO: message history scrolling via up/down
