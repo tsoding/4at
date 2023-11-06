@@ -211,6 +211,8 @@ fn main() -> io::Result<()> {
                             }
                         }
                         // TODO: message history scrolling via up/down
+                        // TODO: jump by words
+                        // TODO: basic readline navigation keybindings
                         KeyCode::Left => {
                             if prompt_cursor > 0 {
                                 prompt_cursor -= 1;
@@ -227,6 +229,7 @@ fn main() -> io::Result<()> {
                                 prompt.remove(prompt_cursor);
                             }
                         }
+                        // TODO: delete current character by KeyCode::Delete
                         KeyCode::Tab => {
                             if let Some((prefix, "")) = parse_command(&prompt[..prompt_cursor]) {
                                 if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(prefix)) {
