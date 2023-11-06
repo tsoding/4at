@@ -97,16 +97,55 @@ macro_rules! chat_info {
     }
 }
 
+#[derive(Default)]
+struct Client {
+    stream: Option<TcpStream>,
+    chat: ChatLog,
+    quit: bool,
+}
+
+fn connect_command(client: &mut Client, argument: &str) {
+    if client.stream.is_none() {
+        let ip = argument.trim();
+        client.stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
+            stream.set_nonblocking(true)?;
+            Ok(stream)
+        }).map_err(|err| {
+            chat_error!(&mut client.chat, "Could not connect to {ip}: {err}")
+        }).ok();
+    } else {
+        chat_error!(&mut client.chat, "You are already connected to a server. Disconnect with /disconnect first.");
+    }
+}
+
+fn disconnect_command(client: &mut Client, _argument: &str) {
+    if client.stream.is_some() {
+        client.stream = None;
+        chat_info!(&mut client.chat, "Disconnected.");
+    } else {
+        chat_info!(&mut client.chat, "You are already offline ._.");
+    }
+}
+
+fn quit_command(client: &mut Client, _argument: &str) {
+    client.quit = true;
+}
+
+// TODO: implement /help
+const COMMANDS: [(&str, fn(&mut Client, &str)); 3] = [ 
+    ("connect", connect_command),
+    ("disconnect", disconnect_command),
+    ("quit", quit_command),
+];
+
 fn main() -> io::Result<()> {
-    let mut stream: Option<TcpStream> = None;
+    let mut client = Client::default();
     let mut stdout = stdout();
     let _raw_mode = RawMode::enable()?;
     let (mut w, mut h) = terminal::size()?;
-    let mut quit = false;
     let mut prompt = String::new();
-    let mut chat = ChatLog::default();
     let mut buf = [0; 64];
-    while !quit {
+    while !client.quit {
         while poll(Duration::ZERO)? {
             match read()? {
                 Event::Resize(nw, nh) => {
@@ -120,7 +159,7 @@ fn main() -> io::Result<()> {
                     match event.code {
                         KeyCode::Char(x) => {
                             if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
-                                quit = true;
+                                client.quit = true;
                             } else {
                                 prompt.push(x);
                             }
@@ -134,38 +173,17 @@ fn main() -> io::Result<()> {
                         KeyCode::Enter => {
                             // TODO: tab autocompletion for slash commands
                             if let Some((command, argument)) = parse_command(&prompt) {
-                                match command {
-                                    // TODO: implement /help
-                                    "disconnect" => {
-                                        if stream.is_some() {
-                                            stream = None;
-                                            chat_info!(&mut chat, "Disconnected.");
-                                        } else {
-                                            chat_info!(&mut chat, "You are already offline ._.");
-                                        }
-                                    }
-                                    "connect" => {
-                                        if stream.is_none() {
-                                            let ip = argument.trim();
-                                            stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
-                                                stream.set_nonblocking(true)?;
-                                                Ok(stream)
-                                            }).map_err(|err| {
-                                                chat_error!(&mut chat, "Could not connect to {ip}: {err}")
-                                            }).ok();
-                                        } else {
-                                            chat_error!(&mut chat, "You are already connected to a server. Disconnect with /disconnect first.");
-                                        }
-                                    }
-                                    "quit" => quit = true,
-                                    _ => chat_error!(&mut chat, "Unknown command `{command}`"),
+                                if let Some((_, action)) = COMMANDS.iter().find(|(name, _)| name == &command) {
+                                    action(&mut client, &argument);
+                                } else {
+                                    chat_error!(&mut client.chat, "Unknown command `/{command}`");
                                 }
                             } else {
-                                if let Some(ref mut stream) = &mut stream {
+                                if let Some(ref mut stream) = &mut client.stream {
                                     stream.write(prompt.as_bytes())?;
-                                    chat_msg!(&mut chat, "{prompt}");
+                                    chat_msg!(&mut client.chat, "{prompt}");
                                 } else {
-                                    chat_info!(&mut chat, "You are offline. Use /connect <ip> to connect to a server.");
+                                    chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
                                 }
                             }
                             prompt.clear();
@@ -177,21 +195,21 @@ fn main() -> io::Result<()> {
             }
         }
 
-        if let Some(ref mut s) = &mut stream {
+        if let Some(ref mut s) = &mut client.stream {
             match s.read(&mut buf) {
                 Ok(n) => {
                     if n > 0 {
                         if let Some(line) = sanitize_terminal_output(&buf[..n]) {
-                            chat.push(line, Color::White)
+                            client.chat.push(line, Color::White)
                         }
                     } else {
-                        stream = None;
-                        chat_info!(&mut chat, "Server closed the connection");
+                        client.stream = None;
+                        chat_info!(&mut client.chat, "Server closed the connection");
                     }
                 }
                 Err(err) => if err.kind() != ErrorKind::WouldBlock {
-                    stream = None;
-                    chat_error!(&mut chat, "Connection Error: {err}");
+                    client.stream = None;
+                    chat_error!(&mut client.chat, "Connection Error: {err}");
                 }
             }
         }
@@ -200,7 +218,7 @@ fn main() -> io::Result<()> {
 
         stdout.queue(MoveTo(0, 0))?;
         status_bar(&mut stdout, "4at", 0, 0, w.into())?;
-        chat_window(&mut stdout, &chat.items, Rect {
+        chat_window(&mut stdout, &client.chat.items, Rect {
             x: 0,
             y: 1,
             w: w as usize,
@@ -208,7 +226,7 @@ fn main() -> io::Result<()> {
             // terminal very small
             h: h as usize-3,
         })?;
-        if stream.is_some() {
+        if client.stream.is_some() {
             status_bar(&mut stdout, "Status: Online", 0, h as usize-2, w.into())?;
         } else {
             status_bar(&mut stdout, "Status: Offline", 0, h as usize-2, w.into())?;
