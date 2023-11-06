@@ -98,6 +98,12 @@ macro_rules! chat_info {
 }
 
 #[derive(Default)]
+struct Prompt {
+    buffer: String,
+    cursor: usize,
+}
+
+#[derive(Default)]
 struct Client {
     stream: Option<TcpStream>,
     chat: ChatLog,
@@ -184,8 +190,7 @@ fn main() -> io::Result<()> {
     let mut stdout = stdout();
     let _raw_mode = RawMode::enable()?;
     let (mut w, mut h) = terminal::size()?;
-    let mut prompt = String::new();
-    let mut prompt_cursor: usize = 0;
+    let mut prompt = Prompt::default();
     let mut buf = [0; 64];
     while !client.quit {
         while poll(Duration::ZERO)? {
@@ -195,7 +200,8 @@ fn main() -> io::Result<()> {
                     h = nh;
                 }
                 Event::Paste(data) => {
-                    prompt.push_str(&data);
+                    // TODO: Copy-Paste must insert text at the place of the cursor
+                    prompt.buffer.push_str(&data);
                 }
                 Event::Key(event) => {
                     match event.code {
@@ -203,45 +209,45 @@ fn main() -> io::Result<()> {
                             if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
                                 client.quit = true;
                             } else {
-                                if prompt_cursor > prompt.len() {
-                                    prompt_cursor = prompt.len()
+                                if prompt.cursor > prompt.buffer.len() {
+                                    prompt.cursor = prompt.buffer.len()
                                 }
-                                prompt.insert(prompt_cursor, x);
-                                prompt_cursor += 1;
+                                prompt.buffer.insert(prompt.cursor, x);
+                                prompt.cursor += 1;
                             }
                         }
                         // TODO: message history scrolling via up/down
                         // TODO: jump by words
                         // TODO: basic readline navigation keybindings
                         KeyCode::Left => {
-                            if prompt_cursor > 0 {
-                                prompt_cursor -= 1;
+                            if prompt.cursor > 0 {
+                                prompt.cursor -= 1;
                             }
                         }
                         KeyCode::Right => {
-                            if prompt_cursor < prompt.len() {
-                                prompt_cursor += 1;
+                            if prompt.cursor < prompt.buffer.len() {
+                                prompt.cursor += 1;
                             }
                         }
                         KeyCode::Backspace => {
-                            if prompt_cursor > 0 {
-                                prompt_cursor -= 1;
-                                prompt.remove(prompt_cursor);
+                            if prompt.cursor > 0 {
+                                prompt.cursor -= 1;
+                                prompt.buffer.remove(prompt.cursor);
                             }
                         }
                         // TODO: delete current character by KeyCode::Delete
                         KeyCode::Tab => {
-                            if let Some((prefix, "")) = parse_command(&prompt[..prompt_cursor]) {
+                            if let Some((prefix, "")) = parse_command(&prompt.buffer[..prompt.cursor]) {
                                 if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(prefix)) {
                                     // TODO: tab autocompletion should scroll through different
                                     // variants on each TAB press
-                                    prompt = format!("/{name}{rest}", name = command.name, rest = &prompt[prompt_cursor..]);
-                                    prompt_cursor = command.name.len() + 1;
+                                    prompt.buffer = format!("/{name}{rest}", name = command.name, rest = &prompt.buffer[prompt.cursor..]);
+                                    prompt.cursor = command.name.len() + 1;
                                 }
                             }
                         }
                         KeyCode::Enter => {
-                            if let Some((name, argument)) = parse_command(&prompt) {
+                            if let Some((name, argument)) = parse_command(&prompt.buffer) {
                                 if let Some(command) = find_command(name) {
                                     (command.run)(&mut client, &argument);
                                 } else {
@@ -249,14 +255,14 @@ fn main() -> io::Result<()> {
                                 }
                             } else {
                                 if let Some(ref mut stream) = &mut client.stream {
-                                    stream.write(prompt.as_bytes())?;
-                                    chat_msg!(&mut client.chat, "{prompt}");
+                                    stream.write(prompt.buffer.as_bytes())?;
+                                    chat_msg!(&mut client.chat, "{text}", text = &prompt.buffer);
                                 } else {
                                     chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
                                 }
                             }
-                            prompt.clear();
-                            prompt_cursor = 0;
+                            prompt.buffer.clear();
+                            prompt.cursor = 0;
                         }
                         _ => {},
                     }
@@ -303,8 +309,9 @@ fn main() -> io::Result<()> {
             status_bar(&mut stdout, "Status: Offline", 0, h as usize-2, w.into())?;
         }
         stdout.queue(MoveTo(0, h-1))?;
-        stdout.queue(Print(prompt.get(0..(w - 2) as usize).unwrap_or(&prompt)))?;
-        stdout.queue(MoveTo(prompt_cursor as u16, h-1))?;
+        // TODO: scrolling the prompt so the cursor is always visible
+        stdout.queue(Print(prompt.buffer.get(0..(w - 2) as usize).unwrap_or(&prompt.buffer)))?;
+        stdout.queue(MoveTo(prompt.cursor as u16, h-1))?;
 
         // TODO: mouse selection does not work
         stdout.flush()?;
