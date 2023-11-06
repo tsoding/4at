@@ -68,6 +68,35 @@ fn parse_command<'a>(prompt: &'a str) -> Option<(&'a str, &'a str)> {
     prompt.split_once(" ").or(Some((prompt, "")))
 }
 
+#[derive(Default)]
+struct ChatLog {
+    items: Vec<(String, Color)>,
+}
+
+impl ChatLog {
+    fn push(&mut self, message: String, color: Color) {
+        self.items.push((message, color))
+    }
+}
+
+macro_rules! chat_msg {
+    ($chat:expr, $($arg:tt)*) => {
+        $chat.push(format!($($arg)*), Color::White)
+    }
+}
+
+macro_rules! chat_error {
+    ($chat:expr, $($arg:tt)*) => {
+        $chat.push(format!($($arg)*), Color::Red)
+    }
+}
+
+macro_rules! chat_info {
+    ($chat:expr, $($arg:tt)*) => {
+        $chat.push(format!($($arg)*), Color::Blue)
+    }
+}
+
 fn main() -> io::Result<()> {
     let mut stream: Option<TcpStream> = None;
     let mut stdout = stdout();
@@ -75,7 +104,7 @@ fn main() -> io::Result<()> {
     let (mut w, mut h) = terminal::size()?;
     let mut quit = false;
     let mut prompt = String::new();
-    let mut chat: Vec<(String, Color)> = Vec::new();
+    let mut chat = ChatLog::default();
     let mut buf = [0; 64];
     while !quit {
         while poll(Duration::ZERO)? {
@@ -105,7 +134,7 @@ fn main() -> io::Result<()> {
                         KeyCode::Enter => {
                             if let Some(ref mut stream) = &mut stream {
                                 stream.write(prompt.as_bytes())?;
-                                chat.push((prompt.clone(), Color::White));
+                                chat_msg!(&mut chat, "{prompt}");
                             } else {
                                 // TODO: tab autocompletion for slash commands
                                 if let Some((command, argument)) = parse_command(&prompt) {
@@ -119,14 +148,14 @@ fn main() -> io::Result<()> {
                                                 stream.set_nonblocking(true)?;
                                                 Ok(stream)
                                             }).map_err(|err| {
-                                                chat.push((format!("Could not connect to {ip}: {err}"), Color::Red))
+                                                chat_error!(&mut chat, "Could not connect to {ip}: {err}")
                                             }).ok();
                                         }
                                         "quit" => quit = true,
-                                        _ => chat.push((format!("Unknown command `{command}`"), Color::Red)),
+                                        _ => chat_error!(&mut chat, "Unknown command `{command}`"),
                                     }
                                 } else {
-                                    chat.push(("You are offline. Use /connect <ip> to connect to a server.".to_string(), Color::Blue));
+                                    chat_info!(&mut chat, "You are offline. Use /connect <ip> to connect to a server.");
                                 }
                             }
                             prompt.clear();
@@ -143,16 +172,16 @@ fn main() -> io::Result<()> {
                 Ok(n) => {
                     if n > 0 {
                         if let Some(line) = sanitize_terminal_output(&buf[..n]) {
-                            chat.push((line, Color::White))
+                            chat.push(line, Color::White)
                         }
                     } else {
                         stream = None;
-                        chat.push((format!("Server closed the connection"), Color::Blue));
+                        chat_info!(&mut chat, "Server closed the connection");
                     }
                 }
                 Err(err) => if err.kind() != ErrorKind::WouldBlock {
                     stream = None;
-                    chat.push((format!("Connection Error: {err}"), Color::Red));
+                    chat_error!(&mut chat, "Connection Error: {err}");
                 }
             }
         }
@@ -161,7 +190,7 @@ fn main() -> io::Result<()> {
 
         stdout.queue(MoveTo(0, 0))?;
         status_bar(&mut stdout, "4at", 0, 0, w.into())?;
-        chat_window(&mut stdout, &chat, Rect {
+        chat_window(&mut stdout, &chat.items, Rect {
             x: 0,
             y: 1,
             w: w as usize,
