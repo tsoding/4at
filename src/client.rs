@@ -145,14 +145,17 @@ fn main() -> io::Result<()> {
                                         }
                                     }
                                     "connect" => {
-                                        // TODO: handle situation /connect when you are already connected
-                                        let ip = argument.trim();
-                                        stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
-                                            stream.set_nonblocking(true)?;
-                                            Ok(stream)
-                                        }).map_err(|err| {
-                                            chat_error!(&mut chat, "Could not connect to {ip}: {err}")
-                                        }).ok();
+                                        if stream.is_none() {
+                                            let ip = argument.trim();
+                                            stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
+                                                stream.set_nonblocking(true)?;
+                                                Ok(stream)
+                                            }).map_err(|err| {
+                                                chat_error!(&mut chat, "Could not connect to {ip}: {err}")
+                                            }).ok();
+                                        } else {
+                                            chat_error!(&mut chat, "You are already connected to a server. Disconnect with /disconnect first.");
+                                        }
                                     }
                                     "quit" => quit = true,
                                     _ => chat_error!(&mut chat, "Unknown command `{command}`"),
