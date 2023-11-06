@@ -268,6 +268,7 @@ fn main() -> io::Result<()> {
 
         stdout.queue(MoveTo(0, 0))?;
         status_bar(&mut stdout, "4at", 0, 0, w.into())?;
+        // TODO: scrolling for chat window
         chat_window(&mut stdout, &client.chat.items, Rect {
             x: 0,
             y: 1,
