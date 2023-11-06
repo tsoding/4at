@@ -99,6 +99,9 @@ fn main() -> io::Result<()> {
                         KeyCode::Esc => {
                             prompt.clear();
                         }
+                        KeyCode::Backspace => {
+                            prompt.pop();
+                        }
                         KeyCode::Enter => {
                             if let Some(ref mut stream) = &mut stream {
                                 stream.write(prompt.as_bytes())?;
