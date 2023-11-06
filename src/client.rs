@@ -132,28 +132,35 @@ fn main() -> io::Result<()> {
                             prompt.pop();
                         }
                         KeyCode::Enter => {
-                            if let Some(ref mut stream) = &mut stream {
-                                stream.write(prompt.as_bytes())?;
-                                chat_msg!(&mut chat, "{prompt}");
-                            } else {
-                                // TODO: tab autocompletion for slash commands
-                                if let Some((command, argument)) = parse_command(&prompt) {
-                                    match command {
-                                        // TODO: implement /disconnect
-                                        // TODO: implement /help
-                                        "connect" => {
-                                            // TODO: handle situation /connect when you are already connected
-                                            let ip = argument.trim();
-                                            stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
-                                                stream.set_nonblocking(true)?;
-                                                Ok(stream)
-                                            }).map_err(|err| {
-                                                chat_error!(&mut chat, "Could not connect to {ip}: {err}")
-                                            }).ok();
+                            // TODO: tab autocompletion for slash commands
+                            if let Some((command, argument)) = parse_command(&prompt) {
+                                match command {
+                                    // TODO: implement /help
+                                    "disconnect" => {
+                                        if stream.is_some() {
+                                            stream = None;
+                                            chat_info!(&mut chat, "Disconnected.");
+                                        } else {
+                                            chat_info!(&mut chat, "You are already offline ._.");
                                         }
-                                        "quit" => quit = true,
-                                        _ => chat_error!(&mut chat, "Unknown command `{command}`"),
                                     }
+                                    "connect" => {
+                                        // TODO: handle situation /connect when you are already connected
+                                        let ip = argument.trim();
+                                        stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
+                                            stream.set_nonblocking(true)?;
+                                            Ok(stream)
+                                        }).map_err(|err| {
+                                            chat_error!(&mut chat, "Could not connect to {ip}: {err}")
+                                        }).ok();
+                                    }
+                                    "quit" => quit = true,
+                                    _ => chat_error!(&mut chat, "Unknown command `{command}`"),
+                                }
+                            } else {
+                                if let Some(ref mut stream) = &mut stream {
+                                    stream.write(prompt.as_bytes())?;
+                                    chat_msg!(&mut chat, "{prompt}");
                                 } else {
                                     chat_info!(&mut chat, "You are offline. Use /connect <ip> to connect to a server.");
                                 }
@@ -194,6 +201,8 @@ fn main() -> io::Result<()> {
             x: 0,
             y: 1,
             w: w as usize,
+            // TODO: make sure there is no underflow anywhere when the user intentionally make the
+            // terminal very small
             h: h as usize-3,
         })?;
         if stream.is_some() {
