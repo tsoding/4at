@@ -185,6 +185,7 @@ fn main() -> io::Result<()> {
     let _raw_mode = RawMode::enable()?;
     let (mut w, mut h) = terminal::size()?;
     let mut prompt = String::new();
+    let mut prompt_cursor: usize = 0;
     let mut buf = [0; 64];
     while !client.quit {
         while poll(Duration::ZERO)? {
@@ -198,26 +199,41 @@ fn main() -> io::Result<()> {
                 }
                 Event::Key(event) => {
                     match event.code {
-                        // TODO: basic editing functionality for the prompt
                         KeyCode::Char(x) => {
                             if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
                                 client.quit = true;
                             } else {
-                                prompt.push(x);
+                                if prompt_cursor > prompt.len() {
+                                    prompt_cursor = prompt.len()
+                                }
+                                prompt.insert(prompt_cursor, x);
+                                prompt_cursor += 1;
                             }
                         }
-                        KeyCode::Esc => {
-                            prompt.clear();
+                        // TODO: message history scrolling via up/down
+                        KeyCode::Left => {
+                            if prompt_cursor > 0 {
+                                prompt_cursor -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if prompt_cursor < prompt.len() {
+                                prompt_cursor += 1;
+                            }
                         }
                         KeyCode::Backspace => {
-                            prompt.pop();
+                            if prompt_cursor > 0 {
+                                prompt_cursor -= 1;
+                                prompt.remove(prompt_cursor);
+                            }
                         }
                         KeyCode::Tab => {
-                            if let Some((prefix, "")) = parse_command(&prompt) {
+                            if let Some((prefix, "")) = parse_command(&prompt[..prompt_cursor]) {
                                 if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(prefix)) {
                                     // TODO: tab autocompletion should scroll through different
                                     // variants on each TAB press
-                                    prompt = format!("/{name}", name = command.name);
+                                    prompt = format!("/{name}{rest}", name = command.name, rest = &prompt[prompt_cursor..]);
+                                    prompt_cursor = command.name.len() + 1;
                                 }
                             }
                         }
@@ -237,6 +253,7 @@ fn main() -> io::Result<()> {
                                 }
                             }
                             prompt.clear();
+                            prompt_cursor = 0;
                         }
                         _ => {},
                     }
@@ -284,6 +301,7 @@ fn main() -> io::Result<()> {
         }
         stdout.queue(MoveTo(0, h-1))?;
         stdout.queue(Print(prompt.get(0..(w - 2) as usize).unwrap_or(&prompt)))?;
+        stdout.queue(MoveTo(prompt_cursor as u16, h-1))?;
 
         // TODO: mouse selection does not work
         stdout.flush()?;
