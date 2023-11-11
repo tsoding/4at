@@ -115,10 +115,10 @@ impl Prompt {
         self.cursor += 1;
     }
 
-    // TODO: insert_str should insert at the current cursor
     fn insert_str(&mut self, text: &str) {
-        self.buffer.extend(text.chars());
-        self.cursor += text.len();
+        for x in text.chars() {
+            self.insert(x)
+        }
     }
 
     fn left_char(&mut self) {
