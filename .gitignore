@@ -1,7 +1,7 @@
 main
 4at
 server
-
+*.swp
 
 # Added by cargo
 
