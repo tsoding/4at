@@ -133,12 +133,26 @@ impl Prompt {
         }
     }
 
+    fn at_cursor(&self) -> char {
+        self.buffer.get(self.cursor).cloned().unwrap_or('\n')
+    }
+
     fn left_word(&mut self) {
-        todo!()
+        while self.cursor > 0 && self.at_cursor().is_whitespace() {
+            self.cursor -= 1;
+        }
+        while self.cursor > 0 && !self.at_cursor().is_whitespace() {
+            self.cursor -= 1;
+        }
     }
 
     fn right_word(&mut self) {
-        todo!()
+        while self.cursor < self.buffer.len() && self.at_cursor().is_whitespace() {
+            self.cursor += 1;
+        }
+        while self.cursor < self.buffer.len() && !self.at_cursor().is_whitespace() {
+            self.cursor += 1;
+        }
     }
 
     fn backspace(&mut self) {
@@ -269,7 +283,6 @@ fn main() -> io::Result<()> {
                             }
                         }
                         // TODO: message history scrolling via up/down
-                        // TODO: jump by words
                         // TODO: basic readline navigation keybindings
                         KeyCode::Left => if event.modifiers.contains(KeyModifiers::CONTROL) {
                             prompt.left_word();
