@@ -53,9 +53,12 @@ fn status_bar(qc: &mut impl QueueableCommand, label: &str, x: usize, y: usize, w
     Ok(())
 }
 
-fn parse_command<'a>(prompt: &'a str) -> Option<(&'a str, &'a str)> {
-    let prompt = prompt.strip_prefix("/")?;
-    prompt.split_once(" ").or(Some((prompt, "")))
+fn parse_command<'a>(prompt: &'a [char]) -> Option<(&'a [char], &'a [char])> {
+    let prompt = prompt.strip_prefix(&['/'])?;
+    let mut iter = prompt.splitn(2, |x| *x == ' ');
+    let a = iter.next().unwrap_or(prompt);
+    let b = iter.next().unwrap_or(&[]);
+    Some((a, b))
 }
 
 #[derive(Default)]
@@ -99,7 +102,7 @@ macro_rules! chat_info {
 
 #[derive(Default)]
 struct Prompt {
-    buffer: String,
+    buffer: Vec<char>,
     cursor: usize,
 }
 
@@ -112,21 +115,30 @@ impl Prompt {
         self.cursor += 1;
     }
 
+    // TODO: insert_str should insert at the current cursor
     fn insert_str(&mut self, text: &str) {
-        self.buffer.insert_str(self.cursor, text);
+        self.buffer.extend(text.chars());
         self.cursor += text.len();
     }
 
-    fn left(&mut self) {
+    fn left_char(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
         }
     }
 
-    fn right(&mut self) {
+    fn right_char(&mut self) {
         if self.cursor < self.buffer.len() {
             self.cursor += 1;
         }
+    }
+
+    fn left_word(&mut self) {
+        todo!()
+    }
+
+    fn right_word(&mut self) {
+        todo!()
     }
 
     fn backspace(&mut self) {
@@ -136,11 +148,11 @@ impl Prompt {
         }
     }
 
-    fn before_cursor(&self) -> &str {
+    fn before_cursor(&self) -> &[char] {
         &self.buffer[..self.cursor]
     }
 
-    fn after_cursor(&self) -> &str {
+    fn after_cursor(&self) -> &[char] {
         &self.buffer[self.cursor..]
     }
 
@@ -259,35 +271,51 @@ fn main() -> io::Result<()> {
                         // TODO: message history scrolling via up/down
                         // TODO: jump by words
                         // TODO: basic readline navigation keybindings
-                        KeyCode::Left => prompt.left(),
-                        KeyCode::Right => prompt.right(),
+                        KeyCode::Left => if event.modifiers.contains(KeyModifiers::CONTROL) {
+                            prompt.left_word();
+                        } else {
+                            prompt.left_char();
+                        }
+                        KeyCode::Right => if event.modifiers.contains(KeyModifiers::CONTROL) {
+                            prompt.right_word();
+                        } else {
+                            prompt.right_char();
+                        }
                         KeyCode::Backspace => prompt.backspace(),
                         // TODO: delete current character by KeyCode::Delete
                         // TODO: delete word by Ctrl+W
                         KeyCode::Tab => {
-                            if let Some((prefix, "")) = parse_command(prompt.before_cursor()) {
-                                if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(prefix)) {
+                            if let Some((prefix, &[])) = parse_command(prompt.before_cursor()) {
+                                let prefix = prefix.iter().collect::<String>();
+                                let rest = prompt.after_cursor().iter().collect::<String>();
+                                if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(&prefix)) {
                                     // TODO: tab autocompletion should scroll through different
                                     // variants on each TAB press
-                                    prompt.buffer = format!("/{name}{rest}", name = command.name, rest = &prompt.after_cursor());
+                                    prompt.clear();
+                                    prompt.insert('/');
+                                    prompt.insert_str(command.name);
+                                    prompt.insert_str(&rest);
                                     prompt.cursor = command.name.len() + 1;
                                 }
                             }
                         }
                         KeyCode::Enter => {
                             if let Some((name, argument)) = parse_command(&prompt.buffer) {
-                                if let Some(command) = find_command(name) {
+                                let name = name.iter().collect::<String>();
+                                let argument = argument.iter().collect::<String>();
+                                if let Some(command) = find_command(&name) {
                                     (command.run)(&mut client, &argument);
                                 } else {
                                     chat_error!(&mut client.chat, "Unknown command `/{name}`");
                                 }
                             } else {
                                 if let Some(ref mut stream) = &mut client.stream {
-                                    stream.write(prompt.buffer.as_bytes())?;
+                                    let prompt = prompt.buffer.iter().collect::<String>();
+                                    stream.write(prompt.as_bytes())?;
                                     // TODO: don't display the message if it was not delivered
                                     // Maybe the server should actually send your own message back.
                                     // Not sending it back made sense in the telnet times.
-                                    chat_msg!(&mut client.chat, "{text}", text = &prompt.buffer);
+                                    chat_msg!(&mut client.chat, "{text}", text = &prompt);
                                 } else {
                                     chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
                                 }
@@ -340,7 +368,9 @@ fn main() -> io::Result<()> {
         }
         stdout.queue(MoveTo(0, h-1))?;
         // TODO: scrolling the prompt so the cursor is always visible
-        stdout.queue(Print(prompt.buffer.get(0..(w - 2) as usize).unwrap_or(&prompt.buffer)))?;
+        for x in prompt.buffer.get(0..(w - 2) as usize).unwrap_or(&prompt.buffer) {
+            stdout.queue(Print(x))?;
+        }
         stdout.queue(MoveTo(prompt.cursor as u16, h-1))?;
 
         // TODO: mouse selection does not work
