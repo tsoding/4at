@@ -231,7 +231,7 @@ struct Command {
     description: &'static str,
 }
 
-const COMMANDS: [Command; 4] = [
+const COMMANDS: &[Command] = &[
     Command {
         name: "connect",
         run: connect_command,
