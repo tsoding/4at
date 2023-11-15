@@ -10,6 +10,7 @@ use std::time::{SystemTime, Duration};
 use std::str;
 use getrandom::getrandom;
 use std::fmt::Write as OtherWrite;
+use std::fs;
 
 type Result<T> = result::Result<T, ()>;
 
@@ -241,9 +242,12 @@ fn generate_token() -> Result<String> {
 
 fn main() -> Result<()> {
     let token = generate_token()?;
+    let token_file_path = "./TOKEN";
+    fs::write(token_file_path, token.as_bytes()).map_err(|err| {
+        eprintln!("ERROR: could not create token file {token_file_path}: {err}");
+    })?;
 
-    println!("INFO: Token: {token}");
-
+    println!("INFO: check {token_file_path} file for the token");
     let address = format!("0.0.0.0:{PORT}");
     let listener = TcpListener::bind(&address).map_err(|err| {
         eprintln!("ERROR: could not bind {address}: {err}", address = Sens(&address), err = Sens(err))
