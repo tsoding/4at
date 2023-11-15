@@ -185,13 +185,24 @@ struct Client {
 
 fn connect_command(client: &mut Client, argument: &str) {
     if client.stream.is_none() {
-        let ip = argument.trim();
-        client.stream = TcpStream::connect(&format!("{ip}:6969")).and_then(|stream| {
-            stream.set_nonblocking(true)?;
-            Ok(stream)
-        }).map_err(|err| {
-            chat_error!(&mut client.chat, "Could not connect to {ip}: {err}")
-        }).ok();
+        let chunks: Vec<&str> = argument.split(' ').filter(|s| !s.is_empty()).collect();
+        match &chunks[..] {
+            &[ip, token] => {
+                client.stream = TcpStream::connect(&format!("{ip}:6969"))
+                    .and_then(|mut stream| {
+                        stream.set_nonblocking(true)?;
+                        stream.write(token.as_bytes())?;
+                        Ok(stream)
+                    })
+                    .map_err(|err| {
+                        chat_error!(&mut client.chat, "Could not connect to {ip}: {err}")
+                    })
+                    .ok();
+            }
+            _ => {
+                chat_error!(&mut client.chat, "Incorrect usage of connect command. Try /connect <ip> <token>");
+            }
+        }
     } else {
         chat_error!(&mut client.chat, "You are already connected to a server. Disconnect with /disconnect first.");
     }
