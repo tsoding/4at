@@ -166,6 +166,7 @@ impl Server {
                                 eprintln!("ERROR: could not send welcome message to {}: {}", Sens(author_addr), Sens(err));
                             });
                         } else {
+                            sinner.strike();
                             println!("INFO: {} failed authorization!", Sens(author_addr));
                             let _ = writeln!(author.conn.as_ref(), "Invalid token! Bruh!").map_err(|err| {
                                 eprintln!("ERROR: could not notify client {} about invalid token: {}", Sens(author_addr), Sens(err));
