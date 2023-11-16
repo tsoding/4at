@@ -11,6 +11,7 @@ use std::str;
 use getrandom::getrandom;
 use std::fmt::Write as OtherWrite;
 use std::fs;
+use std::io;
 
 type Result<T> = result::Result<T, ()>;
 
@@ -41,6 +42,10 @@ enum ClientEvent {
     },
     Disconnected {
         author_addr: SocketAddr,
+    },
+    Errored {
+        author_addr: SocketAddr,
+        err: io::Error,
     },
     Read {
         author_addr: SocketAddr,
@@ -200,6 +205,11 @@ impl Server {
         }
     }
 
+    fn client_errored(&mut self, author_addr: SocketAddr, err: io::Error) {
+        eprintln!("ERROR: could not read message from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+        self.clients.remove(&author_addr);
+    }
+
     fn strike_ip(&mut self, ip: IpAddr) {
         let sinner = self.sinners.entry(ip).or_insert(Sinner::new());
         if sinner.strike() {
@@ -228,6 +238,7 @@ fn server(events: Receiver<ClientEvent>, token: String) -> Result<()> {
                 ClientEvent::Connected{author, author_addr} => server.client_connected(author, author_addr),
                 ClientEvent::Disconnected{author_addr} => server.client_disconnected(author_addr),
                 ClientEvent::Read{author_addr, bytes} => server.client_read(author_addr, &bytes),
+                ClientEvent::Errored{author_addr, err} => server.client_errored(author_addr, err),
             },
             Err(RecvTimeoutError::Timeout) => {
                 // TODO: keep waiting connections in a separate hash map
@@ -258,24 +269,23 @@ fn server(events: Receiver<ClientEvent>, token: String) -> Result<()> {
     }
 }
 
-fn client(stream: Arc<TcpStream>, events: Sender<ClientEvent>) -> Result<()> {
-    let author_addr = stream.peer_addr().map_err(|err| {
-        eprintln!("ERROR: could not get peer address: {err}", err = Sens(err));
-    })?;
-
+fn client(stream: Arc<TcpStream>, author_addr: SocketAddr, events: Sender<ClientEvent>) -> Result<()> {
     events.send(ClientEvent::Connected{author: stream.clone(), author_addr}).expect("send client connected");
     let mut buffer = [0; 64];
     loop {
-        let n = stream.as_ref().read(&mut buffer).map_err(|err| {
-            eprintln!("ERROR: could not read message from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-            events.send(ClientEvent::Disconnected{author_addr}).expect("send client disconnected");
-        })?;
-        if n > 0 {
-            let bytes = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
-            events.send(ClientEvent::Read{author_addr, bytes}).expect("send new message");
-        } else {
-            events.send(ClientEvent::Disconnected{author_addr}).expect("send client disconnected");
-            break;
+        match stream.as_ref().read(&mut buffer) {
+            Ok(0) => {
+                events.send(ClientEvent::Disconnected{author_addr}).expect("send client disconnected");
+                break;
+            }
+            Ok(n) => {
+                let bytes = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
+                events.send(ClientEvent::Read{author_addr, bytes}).expect("send new message");
+            }
+            Err(err) => {
+                events.send(ClientEvent::Errored{author_addr, err}).expect("send client errored");
+                break;
+            }
         }
     }
     Ok(())
@@ -314,13 +324,16 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let stream = Arc::new(stream);
-                let message_sender = message_sender.clone();
-                thread::spawn(|| client(stream, message_sender));
+                match stream.peer_addr() {
+                    Ok(author_addr) => {
+                        let stream = Arc::new(stream);
+                        let message_sender = message_sender.clone();
+                        thread::spawn(move || client(stream, author_addr, message_sender));
+                    }
+                    Err(err) => eprintln!("ERROR: could not get peer address: {err}", err = Sens(err)),
+                }
             }
-            Err(err) => {
-                eprintln!("ERROR: could not accept connection: {err}");
-            }
+            Err(err) => eprintln!("ERROR: could not accept connection: {err}"),
         }
     }
     Ok(())
