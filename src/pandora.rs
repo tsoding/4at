@@ -2,7 +2,7 @@
 use std::net::TcpStream;
 use std::env;
 use std::result;
-use std::process::{ExitCode, Termination};
+use std::process::ExitCode;
 use std::io::Write;
 use getrandom::getrandom;
 
@@ -54,11 +54,11 @@ fn command_hydra(command_name: &str, args: &mut env::Args) -> Result<()> {
     loop {
         match TcpStream::connect(&address) {
             Ok(conn) => {
-                let peer_addr = conn.peer_addr().map_err(|err| {
-                    eprintln!("ERROR: could not get peer address of connection to {address}: {err}");
+                let local_addr = conn.local_addr().map_err(|err| {
+                    eprintln!("ERROR: could not get local address of connection to {address}: {err}");
                 })?;
                 conns.push(conn);
-                eprintln!("INFO: connected to {peer_addr}. Opened {n} connections", n = conns.len());
+                eprintln!("INFO: connected to {local_addr}. Opened {n} connections", n = conns.len());
             }
             Err(err) => {
                 eprintln!("ERROR: could not create another connection to {address}: {err}");
@@ -68,8 +68,20 @@ fn command_hydra(command_name: &str, args: &mut env::Args) -> Result<()> {
     }
 }
 
-fn command_gnome(_command_name: &str, _args: &mut env::Args) -> Result<()> {
-    todo!("Keeps opening and closing connections")
+fn command_gnome(command_name: &str, args: &mut env::Args) -> Result<()> {
+    let address = args.next().ok_or_else(|| {
+        eprintln!("Usage: {command_name} <address>");
+        eprintln!("ERROR: no address is provided. Example: 127.0.0.1:6969");
+    })?;
+    loop {
+        let conn = TcpStream::connect(&address).map_err(|err| {
+            eprintln!("ERROR: could not create another connection: {err}");
+        })?;
+        let local_addr = conn.local_addr().map_err(|err| {
+            eprintln!("ERROR: could not get local address of connection to {address}: {err}");
+        })?;
+        eprintln!("INFO: connected to {local_addr}. Disconnecting...");
+    }
 }
 
 const COMMANDS: &[Command] = &[
