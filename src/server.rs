@@ -34,15 +34,15 @@ impl<T: fmt::Display> fmt::Display for Sens<T> {
     }
 }
 
-enum Message {
-    ClientConnected {
+enum ClientEvent {
+    Connected {
+        author_addr: SocketAddr,
         author: Arc<TcpStream>,
+    },
+    Disconnected {
         author_addr: SocketAddr,
     },
-    ClientDisconnected {
-        author_addr: SocketAddr,
-    },
-    NewMessage {
+    Read {
         author_addr: SocketAddr,
         bytes: Box<[u8]>
     },
@@ -220,14 +220,14 @@ impl Server {
     }
 }
 
-fn server(messages: Receiver<Message>, token: String) -> Result<()> {
+fn server(events: Receiver<ClientEvent>, token: String) -> Result<()> {
     let mut server = Server::from_token(token);
     loop {
-        match messages.recv_timeout(Duration::ZERO) {
+        match events.recv_timeout(Duration::ZERO) {
             Ok(msg) => match msg {
-                Message::ClientConnected{author, author_addr} => server.client_connected(author, author_addr),
-                Message::ClientDisconnected{author_addr} => server.client_disconnected(author_addr),
-                Message::NewMessage{author_addr, bytes} => server.new_message(author_addr, &bytes),
+                ClientEvent::Connected{author, author_addr} => server.client_connected(author, author_addr),
+                ClientEvent::Disconnected{author_addr} => server.client_disconnected(author_addr),
+                ClientEvent::Read{author_addr, bytes} => server.new_message(author_addr, &bytes),
             },
             Err(RecvTimeoutError::Timeout) => {
                 // TODO: keep waiting connections in a separate hash map
@@ -258,23 +258,23 @@ fn server(messages: Receiver<Message>, token: String) -> Result<()> {
     }
 }
 
-fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
+fn client(stream: Arc<TcpStream>, events: Sender<ClientEvent>) -> Result<()> {
     let author_addr = stream.peer_addr().map_err(|err| {
         eprintln!("ERROR: could not get peer address: {err}", err = Sens(err));
     })?;
 
-    messages.send(Message::ClientConnected{author: stream.clone(), author_addr}).expect("send client connected");
+    events.send(ClientEvent::Connected{author: stream.clone(), author_addr}).expect("send client connected");
     let mut buffer = [0; 64];
     loop {
         let n = stream.as_ref().read(&mut buffer).map_err(|err| {
             eprintln!("ERROR: could not read message from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-            messages.send(Message::ClientDisconnected{author_addr}).expect("send client disconnected");
+            events.send(ClientEvent::Disconnected{author_addr}).expect("send client disconnected");
         })?;
         if n > 0 {
             let bytes = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
-            messages.send(Message::NewMessage{author_addr, bytes}).expect("send new message");
+            events.send(ClientEvent::Read{author_addr, bytes}).expect("send new message");
         } else {
-            messages.send(Message::ClientDisconnected{author_addr}).expect("send client disconnected");
+            events.send(ClientEvent::Disconnected{author_addr}).expect("send client disconnected");
             break;
         }
     }
