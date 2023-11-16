@@ -233,7 +233,7 @@ impl Server {
 fn server(events: Receiver<ClientEvent>, token: String) -> Result<()> {
     let mut server = Server::from_token(token);
     loop {
-        match events.recv_timeout(Duration::ZERO) {
+        match events.recv_timeout(SLOWLORIS_LIMIT) {
             Ok(msg) => match msg {
                 ClientEvent::Connected{author, author_addr} => server.client_connected(author, author_addr),
                 ClientEvent::Disconnected{author_addr} => server.client_disconnected(author_addr),
