@@ -149,7 +149,7 @@ impl Server {
         self.clients.remove(&author_addr);
     }
 
-    fn new_message(&mut self, author_addr: SocketAddr, bytes: &[u8]) {
+    fn client_read(&mut self, author_addr: SocketAddr, bytes: &[u8]) {
         if let Some(author) = self.clients.get_mut(&author_addr) {
             let now = SystemTime::now();
             let diff = now.duration_since(author.last_message).unwrap_or_else(|err| {
@@ -227,7 +227,7 @@ fn server(events: Receiver<ClientEvent>, token: String) -> Result<()> {
             Ok(msg) => match msg {
                 ClientEvent::Connected{author, author_addr} => server.client_connected(author, author_addr),
                 ClientEvent::Disconnected{author_addr} => server.client_disconnected(author_addr),
-                ClientEvent::Read{author_addr, bytes} => server.new_message(author_addr, &bytes),
+                ClientEvent::Read{author_addr, bytes} => server.client_read(author_addr, &bytes),
             },
             Err(RecvTimeoutError::Timeout) => {
                 // TODO: keep waiting connections in a separate hash map
