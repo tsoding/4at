@@ -10,14 +10,18 @@ Simple Multi-User Chat.
 
 ```console
 $ cargo run --bin server
-Token: <authentication token>
-<logs>
 ```
+
+Upon running the server creates `./TOKEN` where the Authentication Token is located. You will needed to connect to the Server via the Client.
 
 ### Client
 
 ```console
 $ cargo run --bin client
-> /connect <server ip>
-> <authentication token>
+```
+
+In the prompt of the Client
+
+```console
+> /connect <server ip> <token>
 ```
