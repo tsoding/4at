@@ -45,8 +45,27 @@ fn command_dragon(command_name: &str, args: &mut env::Args) -> Result<()> {
     Ok(())
 }
 
-fn command_hydra(_command_name: &str, _args: &mut env::Args) -> Result<()> {
-    todo!("Opens as many connections as possible")
+fn command_hydra(command_name: &str, args: &mut env::Args) -> Result<()> {
+    let address = args.next().ok_or_else(|| {
+        eprintln!("Usage: {command_name} <address>");
+        eprintln!("ERROR: no address is provided. Example: 127.0.0.1:6969");
+    })?;
+    let mut conns = Vec::new();
+    loop {
+        match TcpStream::connect(&address) {
+            Ok(conn) => {
+                let peer_addr = conn.peer_addr().map_err(|err| {
+                    eprintln!("ERROR: could not get peer address of connection to {address}: {err}");
+                })?;
+                conns.push(conn);
+                eprintln!("INFO: connected to {peer_addr}. Opened {n} connections", n = conns.len());
+            }
+            Err(err) => {
+                eprintln!("ERROR: could not create another connection to {address}: {err}");
+                return Err(());
+            }
+        }
+    }
 }
 
 fn command_gnome(_command_name: &str, _args: &mut env::Args) -> Result<()> {
@@ -84,7 +103,10 @@ fn main() -> ExitCode {
     let program = args.next().expect("program");
     if let Some(command_name) = args.next() {
         if let Some(command) = COMMANDS.iter().find(|command| command.name == command_name) {
-            (command.run)(&command_name, &mut args).report()
+            match (command.run)(&command_name, &mut args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(()) => ExitCode::FAILURE,
+            }
         } else {
             usage(&program);
             eprintln!("ERROR: Unknown command {command_name}");
