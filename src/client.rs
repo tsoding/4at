@@ -1,8 +1,8 @@
 use std::io::{self, stdout, Read, Write, ErrorKind};
-use crossterm::terminal::{self, Clear, ClearType};
-use crossterm::cursor::{MoveTo};
+use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::cursor::MoveTo;
 use crossterm::style::{Print, SetBackgroundColor, SetForegroundColor, Color};
-use crossterm::{QueueableCommand};
+use crossterm::{execute, QueueableCommand};
 use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers, KeyEventKind};
 use std::time::Duration;
 use std::thread;
@@ -513,5 +513,7 @@ fn main() -> io::Result<()> {
 
         thread::sleep(Duration::from_millis(33));
     }
+
+    execute!(stdout, LeaveAlternateScreen)?;
     Ok(())
 }
