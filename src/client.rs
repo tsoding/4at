@@ -3,7 +3,7 @@ use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
 use crossterm::style::{Print, PrintStyledContent, SetBackgroundColor, SetForegroundColor, Color, ResetColor, Stylize};
 use crossterm::{QueueableCommand};
-use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers};
+use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers, KeyEventKind};
 use std::time::Duration;
 use std::thread;
 use std::net::TcpStream;
@@ -285,68 +285,70 @@ fn main() -> io::Result<()> {
                 }
                 Event::Paste(data) => prompt.insert_str(&data),
                 Event::Key(event) => {
-                    match event.code {
-                        KeyCode::Char(x) => {
-                            if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
-                                client.quit = true;
-                            } else {
-                                prompt.insert(x);
-                            }
-                        }
-                        // TODO: message history scrolling via up/down
-                        // TODO: basic readline navigation keybindings
-                        KeyCode::Left => if event.modifiers.contains(KeyModifiers::CONTROL) {
-                            prompt.left_word();
-                        } else {
-                            prompt.left_char();
-                        }
-                        KeyCode::Right => if event.modifiers.contains(KeyModifiers::CONTROL) {
-                            prompt.right_word();
-                        } else {
-                            prompt.right_char();
-                        }
-                        KeyCode::Backspace => prompt.backspace(),
-                        // TODO: delete current character by KeyCode::Delete
-                        // TODO: delete word by Ctrl+W
-                        KeyCode::Tab => {
-                            if let Some((prefix, &[])) = parse_command(prompt.before_cursor()) {
-                                let prefix = prefix.iter().collect::<String>();
-                                let rest = prompt.after_cursor().iter().collect::<String>();
-                                if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(&prefix)) {
-                                    // TODO: tab autocompletion should scroll through different
-                                    // variants on each TAB press
-                                    prompt.clear();
-                                    prompt.insert('/');
-                                    prompt.insert_str(command.name);
-                                    prompt.insert_str(&rest);
-                                    prompt.cursor = command.name.len() + 1;
-                                }
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if let Some((name, argument)) = parse_command(&prompt.buffer) {
-                                let name = name.iter().collect::<String>();
-                                let argument = argument.iter().collect::<String>();
-                                if let Some(command) = find_command(&name) {
-                                    (command.run)(&mut client, &argument);
+                    if event.kind == KeyEventKind::Press {
+                        match event.code {
+                            KeyCode::Char(x) => {
+                                if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
+                                    client.quit = true;
                                 } else {
-                                    chat_error!(&mut client.chat, "Unknown command `/{name}`");
-                                }
-                            } else {
-                                if let Some(ref mut stream) = &mut client.stream {
-                                    let prompt = prompt.buffer.iter().collect::<String>();
-                                    stream.write(prompt.as_bytes())?;
-                                    // TODO: don't display the message if it was not delivered
-                                    // Maybe the server should actually send your own message back.
-                                    // Not sending it back made sense in the telnet times.
-                                    chat_msg!(&mut client.chat, "{text}", text = &prompt);
-                                } else {
-                                    chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
+                                    prompt.insert(x);
                                 }
                             }
-                            prompt.clear();
+                            // TODO: message history scrolling via up/down
+                            // TODO: basic readline navigation keybindings
+                            KeyCode::Left => if event.modifiers.contains(KeyModifiers::CONTROL) {
+                                prompt.left_word();
+                            } else {
+                                prompt.left_char();
+                            }
+                            KeyCode::Right => if event.modifiers.contains(KeyModifiers::CONTROL) {
+                                prompt.right_word();
+                            } else {
+                                prompt.right_char();
+                            }
+                            KeyCode::Backspace => prompt.backspace(),
+                            // TODO: delete current character by KeyCode::Delete
+                            // TODO: delete word by Ctrl+W
+                            KeyCode::Tab => {
+                                if let Some((prefix, &[])) = parse_command(prompt.before_cursor()) {
+                                    let prefix = prefix.iter().collect::<String>();
+                                    let rest = prompt.after_cursor().iter().collect::<String>();
+                                    if let Some(command) = COMMANDS.iter().find(|command| command.name.starts_with(&prefix)) {
+                                        // TODO: tab autocompletion should scroll through different
+                                        // variants on each TAB press
+                                        prompt.clear();
+                                        prompt.insert('/');
+                                        prompt.insert_str(command.name);
+                                        prompt.insert_str(&rest);
+                                        prompt.cursor = command.name.len() + 1;
+                                    }
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some((name, argument)) = parse_command(&prompt.buffer) {
+                                    let name = name.iter().collect::<String>();
+                                    let argument = argument.iter().collect::<String>();
+                                    if let Some(command) = find_command(&name) {
+                                        (command.run)(&mut client, &argument);
+                                    } else {
+                                        chat_error!(&mut client.chat, "Unknown command `/{name}`");
+                                    }
+                                } else {
+                                    if let Some(ref mut stream) = &mut client.stream {
+                                        let prompt = prompt.buffer.iter().collect::<String>();
+                                        stream.write(prompt.as_bytes())?;
+                                        // TODO: don't display the message if it was not delivered
+                                        // Maybe the server should actually send your own message back.
+                                        // Not sending it back made sense in the telnet times.
+                                        chat_msg!(&mut client.chat, "{text}", text = &prompt);
+                                    } else {
+                                        chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
+                                    }
+                                }
+                                prompt.clear();
+                            }
+                            _ => {},
                         }
-                        _ => {},
                     }
                 },
                 _ => {},
