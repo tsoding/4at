@@ -1,7 +1,7 @@
 use std::io::{self, stdout, Read, Write, ErrorKind};
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
-use crossterm::style::{Print, PrintStyledContent, SetBackgroundColor, SetForegroundColor, Color, ResetColor, Stylize};
+use crossterm::style::{Print, SetBackgroundColor, SetForegroundColor, Color};
 use crossterm::{QueueableCommand};
 use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers, KeyEventKind};
 use std::time::Duration;
@@ -39,16 +39,13 @@ fn sanitize_terminal_output(bytes: &[u8]) -> Option<String> {
     }
 }
 
-fn status_bar(qc: &mut impl QueueableCommand, label: &str, x: usize, y: usize, w: usize) -> io::Result<()> {
+fn status_bar(buffer: &mut Buffer, label: &str, x: usize, y: usize, w: usize) -> io::Result<()> {
     if label.len() <= w {
-        qc.queue(MoveTo(x as u16, y as u16))?;
-        qc.queue(SetBackgroundColor(Color::White))?;
-        qc.queue(SetForegroundColor(Color::Black))?;
-        qc.queue(Print(label))?;
-        for _ in 0..w as usize-label.len() {
-            qc.queue(Print(" "))?;
+        let label_chars: Vec<_> = label.chars().collect();
+        buffer.put_cells(x, y, &label_chars, Color::Black, Color::White);
+        for x in label.len()..w {
+            buffer.put_cell(x, y, ' ', Color::Black, Color::White);
         }
-        qc.queue(ResetColor)?;
     }
     Ok(())
 }
@@ -66,17 +63,101 @@ struct ChatLog {
     items: Vec<(String, Color)>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct Cell {
+    ch: char,
+    fg: Color,
+    bg: Color,
+}
+
+impl Cell {
+    fn space() -> Self {
+        Self {
+            ch: ' ',
+            fg: Color::Reset,
+            bg: Color::Reset,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Buffer {
+    cells: Vec<Cell>,
+    width: usize,
+    height: usize,
+}
+
+struct Patch {
+    cell: Cell,
+    x: usize,
+    y: usize
+}
+
+impl Buffer {
+    fn new(width: usize, height: usize) -> Self {
+        let cells = vec![Cell::space(); width*height];
+        Self { cells, width, height }
+    }
+
+    fn resize(&mut self, width: usize, height: usize) {
+        self.cells.resize(width*height, Cell::space());
+        self.cells.fill(Cell::space());
+        self.width = width;
+        self.height = height;
+    }
+
+    fn diff(&self, other: &Self) -> Vec<Patch> {
+        assert!(self.width == other.width && self.height == other.height);
+        self.cells
+            .iter()
+            .zip(other.cells.iter())
+            .enumerate()
+            .filter(|(_, (a, b))| *a != *b)
+            .map(|(i, (_, cell))| {
+                let x = i%self.width;
+                let y = i/self.width;
+                Patch { cell: cell.clone(), x, y }
+            })
+            .collect()
+    }
+
+    fn clear(&mut self) {
+        self.cells.fill(Cell::space());
+    }
+
+    fn put_cell(&mut self, x: usize, y: usize, ch: char, fg: Color, bg: Color) {
+        if let Some(cell) = self.cells.get_mut(y*self.width + x) {
+            *cell = Cell { ch, fg, bg }
+        }
+    }
+
+    fn put_cells(&mut self, x: usize, y: usize, chs: &[char], fg: Color, bg: Color) {
+        let start = y*self.width + x;
+        for (offset, &ch) in chs.iter().enumerate() {
+            if start + offset > self.cells.len() {
+                break;
+            }
+            if let Some(cell) = self.cells.get_mut(start + offset) {
+                *cell = Cell { ch, fg, bg }
+            }
+        }
+    }
+}
+
 impl ChatLog {
     fn push(&mut self, message: String, color: Color) {
         self.items.push((message, color))
     }
 
-    fn render(&mut self, qc: &mut impl QueueableCommand, boundary: Rect) -> io::Result<()> {
+    fn render(&mut self, buffer: &mut Buffer, boundary: Rect) -> io::Result<()> {
         let n = self.items.len();
         let m = n.checked_sub(boundary.h).unwrap_or(0);
         for (dy, (line, color)) in self.items.iter().skip(m).enumerate() {
-            qc.queue(MoveTo(boundary.x as u16, (boundary.y + dy) as u16))?;
-            qc.queue(PrintStyledContent(line.get(0..boundary.w).unwrap_or(&line).with(*color)))?;
+            let line_chars: Vec<_> = line.chars().collect();
+            buffer.put_cells(
+                boundary.x, boundary.y + dy,
+                line_chars.get(0..boundary.w).unwrap_or(&line_chars),
+                *color, Color::Reset);
         }
         Ok(())
     }
@@ -107,6 +188,12 @@ struct Prompt {
 }
 
 impl Prompt {
+    fn render(&mut self, buffer: &mut Buffer, x: usize, y: usize, w: usize) -> io::Result<()> {
+        // TODO: scrolling the prompt so the cursor is always visible
+        buffer.put_cells(x, y, self.buffer.get(0..w as usize).unwrap_or(&self.buffer), Color::White, Color::Reset);
+        Ok(())
+    }
+
     fn insert(&mut self, x: char) {
         if self.cursor > self.buffer.len() {
             self.cursor = self.buffer.len()
@@ -274,14 +361,22 @@ fn main() -> io::Result<()> {
     let mut stdout = stdout();
     let _raw_mode = RawMode::enable()?;
     let (mut w, mut h) = terminal::size()?;
+    let mut buf_curr = Buffer::new(w as usize, h as usize);
+    let mut buf_prev = Buffer::new(w as usize, h as usize);
     let mut prompt = Prompt::default();
     let mut buf = [0; 64];
+    stdout.queue(Clear(ClearType::All))?;
+    stdout.flush()?;
     while !client.quit {
         while poll(Duration::ZERO)? {
             match read()? {
                 Event::Resize(nw, nh) => {
                     w = nw;
                     h = nh;
+                    buf_curr.resize(w as usize, h as usize);
+                    buf_prev.resize(w as usize, h as usize);
+                    stdout.queue(Clear(ClearType::All))?;
+                    stdout.flush()?;
                 }
                 Event::Paste(data) => prompt.insert_str(&data),
                 Event::Key(event) => if event.kind == KeyEventKind::Press {
@@ -372,12 +467,10 @@ fn main() -> io::Result<()> {
             }
         }
 
-        stdout.queue(Clear(ClearType::All))?;
-
-        stdout.queue(MoveTo(0, 0))?;
-        status_bar(&mut stdout, "4at", 0, 0, w.into())?;
+        buf_curr.clear();
+        status_bar(&mut buf_curr, "4at", 0, 0, w.into())?;
         // TODO: scrolling for chat window
-        client.chat.render(&mut stdout, Rect {
+        client.chat.render(&mut buf_curr, Rect {
             x: 0,
             y: 1,
             w: w as usize,
@@ -386,19 +479,37 @@ fn main() -> io::Result<()> {
             h: h as usize-3,
         })?;
         if client.stream.is_some() {
-            status_bar(&mut stdout, "Status: Online", 0, h as usize-2, w.into())?;
+            status_bar(&mut buf_curr, "Status: Online", 0, h as usize-2, w.into())?;
         } else {
-            status_bar(&mut stdout, "Status: Offline", 0, h as usize-2, w.into())?;
+            status_bar(&mut buf_curr, "Status: Offline", 0, h as usize-2, w.into())?;
         }
-        stdout.queue(MoveTo(0, h-1))?;
-        // TODO: scrolling the prompt so the cursor is always visible
-        for x in prompt.buffer.get(0..(w - 2) as usize).unwrap_or(&prompt.buffer) {
-            stdout.queue(Print(x))?;
+        prompt.render(&mut buf_curr, 0, h as usize-1, w as usize)?;
+
+        let mut fg_curr = Color::Reset;
+        let mut bg_curr = Color::Reset;
+        let mut x_prev = 0;
+        let mut y_prev = 0;
+        stdout.queue(SetForegroundColor(fg_curr))?;
+        stdout.queue(SetBackgroundColor(bg_curr))?;
+        for Patch{cell: Cell{ch, fg, bg}, x, y} in buf_prev.diff(&buf_curr).iter() {
+            if !(y_prev == *y && x_prev + 1 == *x) {
+                stdout.queue(MoveTo(*x as u16, *y as u16))?;
+            }
+            x_prev = *x;
+            y_prev = *y;
+            if fg_curr != *fg {
+                fg_curr = *fg;
+                stdout.queue(SetForegroundColor(fg_curr))?;
+            }
+            if bg_curr != *bg {
+                bg_curr = *bg;
+                stdout.queue(SetBackgroundColor(bg_curr))?;
+            }
+            stdout.queue(Print(ch))?;
         }
         stdout.queue(MoveTo(prompt.cursor as u16, h-1))?;
-
-        // TODO: mouse selection does not work
         stdout.flush()?;
+        buf_prev = buf_curr.clone();
 
         thread::sleep(Duration::from_millis(33));
     }
