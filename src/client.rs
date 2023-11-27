@@ -3,7 +3,7 @@ use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::cursor::{MoveTo};
 use crossterm::style::{Print, PrintStyledContent, SetBackgroundColor, SetForegroundColor, Color, ResetColor, Stylize};
 use crossterm::{QueueableCommand};
-use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers};
+use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers, KeyEventKind};
 use std::time::Duration;
 use std::thread;
 use std::net::TcpStream;
@@ -284,7 +284,7 @@ fn main() -> io::Result<()> {
                     h = nh;
                 }
                 Event::Paste(data) => prompt.insert_str(&data),
-                Event::Key(event) => {
+                Event::Key(event) => if event.kind == KeyEventKind::Press {
                     match event.code {
                         KeyCode::Char(x) => {
                             if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
