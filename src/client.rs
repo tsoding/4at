@@ -30,6 +30,21 @@ impl Drop for RawMode {
     }
 }
 
+struct AltScreen;
+
+impl AltScreen {
+    fn new() -> io::Result<Self> {
+        execute!(stdout(), EnterAlternateScreen)?;
+        Ok(AltScreen)
+    }
+}
+
+impl Drop for AltScreen {
+    fn drop(&mut self) {
+        let _ = execute!(stdout(), LeaveAlternateScreen);
+    }
+}
+
 fn sanitize_terminal_output(bytes: &[u8]) -> Option<String> {
     let bytes: Vec<u8> = bytes.iter().cloned().filter(|x| *x >= 32).collect();
     if let Ok(result) = str::from_utf8(&bytes) {
@@ -365,8 +380,8 @@ fn main() -> io::Result<()> {
     let mut buf_prev = Buffer::new(w as usize, h as usize);
     let mut prompt = Prompt::default();
     let mut buf = [0; 64];
-    stdout.queue(Clear(ClearType::All))?;
-    stdout.flush()?;
+    let _alt_screen = AltScreen::new();
+
     while !client.quit {
         while poll(Duration::ZERO)? {
             match read()? {
@@ -514,6 +529,5 @@ fn main() -> io::Result<()> {
         thread::sleep(Duration::from_millis(33));
     }
 
-    execute!(stdout, LeaveAlternateScreen)?;
     Ok(())
 }
