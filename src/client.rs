@@ -333,12 +333,12 @@ fn quit_command(client: &mut Client, _argument: &str) {
 fn help_command(client: &mut Client, argument: &str) {
     let name = argument.trim();
     if name.is_empty() {
-        for command in COMMANDS.iter() {
-            chat_info!(client.chat, "/{name} - {description}", name = command.name, description = command.description);
+        for Command{signature, description, ..} in COMMANDS.iter() {
+            chat_info!(client.chat, "{signature} - {description}");
         }
     } else {
-        if let Some(command) = find_command(name) {
-            chat_info!(client.chat, "/{name} - {description}", name = command.name, description = command.description);
+        if let Some(Command{signature, description, ..}) = find_command(name) {
+            chat_info!(client.chat, "{signature} - {description}");
         } else {
             chat_error!(&mut client.chat, "Unknown command `/{name}`");
         }
@@ -347,30 +347,35 @@ fn help_command(client: &mut Client, argument: &str) {
 
 struct Command {
     name: &'static str,
-    run: fn(&mut Client, &str),
     description: &'static str,
+    signature: &'static str,
+    run: fn(&mut Client, &str),
 }
 
 const COMMANDS: &[Command] = &[
     Command {
         name: "connect",
         run: connect_command,
-        description: "Connect to a server by IP"
+        description: "Connect to a server by <ip> with authorization <token>",
+        signature: "/connect <ip> <token>",
     },
     Command {
         name: "disconnect",
         run: disconnect_command,
-        description: "Disconnect from the server you are currently connected to"
+        description: "Disconnect from the server you are currently connected to",
+        signature: "/disconnect",
     },
     Command {
         name: "quit",
         run: quit_command,
-        description: "Close the chat"
+        description: "Close the chat",
+        signature: "/quit",
     },
     Command {
         name: "help",
         run: help_command,
         description: "Print help",
+        signature: "/help [command]",
     },
 ];
 
@@ -413,6 +418,7 @@ fn main() -> io::Result<()> {
     let mut buf_prev = Buffer::new(w as usize, h as usize);
     let mut prompt = Prompt::default();
     let mut buf = [0; 64];
+    help_command(&mut client, "");
     buf_prev.flush(&mut stdout)?;
     while !client.quit {
         while poll(Duration::ZERO)? {
