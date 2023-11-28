@@ -488,7 +488,7 @@ fn main() -> io::Result<()> {
                                     // Not sending it back made sense in the telnet times.
                                     chat_msg!(&mut client.chat, "{text}", text = &prompt);
                                 } else {
-                                    chat_info!(&mut client.chat, "You are offline. Use /connect <ip> to connect to a server.");
+                                    chat_info!(&mut client.chat, "You are offline. Use {signature} to connect to a server.", signature = find_command("connect").expect("connect command").signature);
                                 }
                             }
                             prompt.clear();
