@@ -1,8 +1,8 @@
 use std::io::{self, stdout, Read, Write, ErrorKind};
-use crossterm::terminal::{self, Clear, ClearType};
+use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::cursor::{MoveTo};
 use crossterm::style::{Print, SetBackgroundColor, SetForegroundColor, Color};
-use crossterm::{QueueableCommand};
+use crossterm::{execute, QueueableCommand};
 use crossterm::event::{read, poll, Event, KeyCode, KeyModifiers, KeyEventKind};
 use std::time::Duration;
 use std::thread;
@@ -13,19 +13,23 @@ struct Rect {
     x: usize, y: usize, w: usize, h: usize,
 }
 
-struct RawMode;
+struct ScreenState;
 
-impl RawMode {
+impl ScreenState {
     fn enable() -> io::Result<Self> {
+        execute!(stdout(), EnterAlternateScreen)?;
         terminal::enable_raw_mode()?;
-        Ok(RawMode)
+        Ok(Self)
     }
 }
 
-impl Drop for RawMode {
+impl Drop for ScreenState {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode().map_err(|err| {
             eprintln!("ERROR: disable raw mode: {err}")
+        });
+        let _ = execute!(stdout(), LeaveAlternateScreen).map_err(|err| {
+            eprintln!("ERROR: leave alternate screen: {err}")
         });
     }
 }
@@ -403,7 +407,7 @@ fn apply_patches(qc: &mut impl QueueableCommand, patches: &[Patch]) -> io::Resul
 fn main() -> io::Result<()> {
     let mut client = Client::default();
     let mut stdout = stdout();
-    let _raw_mode = RawMode::enable()?;
+    let _screen_state = ScreenState::enable()?;
     let (mut w, mut h) = terminal::size()?;
     let mut buf_curr = Buffer::new(w as usize, h as usize);
     let mut buf_prev = Buffer::new(w as usize, h as usize);
