@@ -317,6 +317,12 @@ impl Prompt {
         self.buffer.clear();
         self.cursor = 0;
     }
+
+    fn delete_until_end(&mut self) {
+        while self.cursor < self.buffer.len() {
+            self.buffer.pop();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -470,12 +476,14 @@ fn main() -> io::Result<()> {
                 Event::Paste(data) => prompt.insert_str(&data),
                 Event::Key(event) => if event.kind == KeyEventKind::Press {
                     match event.code {
-                        KeyCode::Char(x) => {
-                            if x == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
-                                client.quit = true;
-                            } else {
-                                prompt.insert(x);
+                        KeyCode::Char(x) => if event.modifiers.contains(KeyModifiers::CONTROL) {
+                            match x {
+                                'c' => client.quit = true,
+                                'k' => prompt.delete_until_end(),
+                                _ => {}
                             }
+                        } else {
+                            prompt.insert(x);
                         }
                         // TODO: message history scrolling via up/down
                         // TODO: basic readline navigation keybindings
