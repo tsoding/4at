@@ -223,7 +223,8 @@ impl Prompt {
     }
 
     fn sync_terminal_cursor(&mut self, qc: &mut impl Write, x: usize, y: usize, w: usize) -> io::Result<()> {
-        if let Some(w) = w.checked_sub(1) {
+        if let Some(w) = w.checked_sub(2) {
+            let x = x + 1;
             self.sync_scroll_with_cursor(w);
             let offset = self.cursor - self.scroll; // NOTE: self.scroll <= self.cursor must be guaranteed by self.sync_scroll_with_cursor()
             let _ = qc.queue(MoveTo((x + offset) as u16, y as u16))?;
@@ -232,14 +233,17 @@ impl Prompt {
     }
 
     fn render(&mut self, buffer: &mut Buffer, x: usize, y: usize, w: usize) {
-        if let Some(w) = w.checked_sub(1) {
+        if let Some(w) = w.checked_sub(2) {
+            let x = x + 1;
             self.sync_scroll_with_cursor(w);
             let begin = self.scroll;
             let end = cmp::min(self.scroll + w, self.buffer.len());
             if let Some(window) = self.buffer.get(begin..end) {
                 buffer.put_cells(x, y, window, Color::White, Color::Black);
+                if self.scroll > 0 {
+                    buffer.put_cell(x - 1, y, '<', Color::White, Color::Black);
+                }
                 if self.scroll + w < self.buffer.len() {
-                    // TODO: put a similar '<' on the right to indicate when there is some content there
                     buffer.put_cell(x + w, y, '>', Color::White, Color::Black);
                 }
             }
@@ -554,7 +558,8 @@ fn main() -> io::Result<()> {
 
         buf_curr.clear();
         status_bar(&mut buf_curr, "4at", 0, 0, w.into());
-        // TODO: scrolling for chat window
+        // TODO: vertical scrolling for chat window
+        // TODO: horizontal scrolling for chat window
         if let Some(h) = h.checked_sub(3) {
             client.chat.render(&mut buf_curr, Rect {
                 x: 0,
@@ -571,13 +576,21 @@ fn main() -> io::Result<()> {
         if let Some(h) = h.checked_sub(2) {
             status_bar(&mut buf_curr, status_label, 0, h as usize, w.into());
         }
-        if let Some(h) = h.checked_sub(1) {
-            prompt.render(&mut buf_curr, 0, h as usize, w as usize);
+        if let Some(y) = h.checked_sub(1) {
+            let x = 1;
+            if let Some(w) = w.checked_sub(1) {
+                prompt.render(&mut buf_curr, x, y as usize, w as usize);
+            }
+            buf_curr.put_cell(0, y as usize, '-', Color::White, Color::Black);
         }
 
         apply_patches(&mut stdout, &buf_prev.diff(&buf_curr))?;
-        if let Some(h) = h.checked_sub(1) {
-            prompt.sync_terminal_cursor(&mut stdout, 0, h as usize, w as usize)?;
+
+        if let Some(y) = h.checked_sub(1) {
+            let x = 1;
+            if let Some(w) = w.checked_sub(1) {
+                prompt.sync_terminal_cursor(&mut stdout, x, y as usize, w as usize)?;
+            }
         }
         stdout.flush()?;
         mem::swap(&mut buf_curr, &mut buf_prev);
