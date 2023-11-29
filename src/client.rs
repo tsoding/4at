@@ -46,12 +46,11 @@ fn sanitize_terminal_output(bytes: &[u8]) -> Option<String> {
 }
 
 fn status_bar(buffer: &mut Buffer, label: &str, x: usize, y: usize, w: usize) {
-    if label.len() <= w {
-        let label_chars: Vec<_> = label.chars().collect();
-        buffer.put_cells(x, y, &label_chars, Color::Black, Color::White);
-        for x in label.len()..w {
-            buffer.put_cell(x, y, ' ', Color::Black, Color::White);
-        }
+    let label_chars: Vec<_> = label.chars().collect();
+    let n = cmp::min(label_chars.len(), w);
+    buffer.put_cells(x, y, &label_chars[..n], Color::Black, Color::White);
+    for x in label.len()..w {
+        buffer.put_cell(x, y, ' ', Color::Black, Color::White);
     }
 }
 
@@ -226,7 +225,7 @@ impl Prompt {
     fn sync_terminal_cursor(&mut self, qc: &mut impl Write, x: usize, y: usize, w: usize) -> io::Result<()> {
         if let Some(w) = w.checked_sub(1) {
             self.sync_scroll_with_cursor(w);
-            let offset = self.cursor - self.scroll;
+            let offset = self.cursor - self.scroll; // NOTE: self.scroll <= self.cursor must be guaranteed by self.sync_scroll_with_cursor()
             let _ = qc.queue(MoveTo((x + offset) as u16, y as u16))?;
         }
         Ok(())
@@ -556,24 +555,30 @@ fn main() -> io::Result<()> {
         buf_curr.clear();
         status_bar(&mut buf_curr, "4at", 0, 0, w.into());
         // TODO: scrolling for chat window
-        client.chat.render(&mut buf_curr, Rect {
-            x: 0,
-            y: 1,
-            w: w as usize,
-            // TODO: make sure there is no underflow anywhere when the user intentionally make the terminal very small
-            // We can just go through all the sub operations in this file and make them checked
-            h: h as usize-3,
-        });
+        if let Some(h) = h.checked_sub(3) {
+            client.chat.render(&mut buf_curr, Rect {
+                x: 0,
+                y: 1,
+                w: w as usize,
+                h: h as usize,
+            });
+        }
         let status_label = if client.stream.is_some() {
             "Status: Online"
         } else {
             "Status: Offline"
         };
-        status_bar(&mut buf_curr, status_label, 0, h as usize-2, w.into());
-        prompt.render(&mut buf_curr, 0, h as usize-1, w as usize);
+        if let Some(h) = h.checked_sub(2) {
+            status_bar(&mut buf_curr, status_label, 0, h as usize, w.into());
+        }
+        if let Some(h) = h.checked_sub(1) {
+            prompt.render(&mut buf_curr, 0, h as usize, w as usize);
+        }
 
         apply_patches(&mut stdout, &buf_prev.diff(&buf_curr))?;
-        prompt.sync_terminal_cursor(&mut stdout, 0, h as usize-1, w as usize)?;
+        if let Some(h) = h.checked_sub(1) {
+            prompt.sync_terminal_cursor(&mut stdout, 0, h as usize, w as usize)?;
+        }
         stdout.flush()?;
         mem::swap(&mut buf_curr, &mut buf_prev);
 
