@@ -8,6 +8,8 @@ use std::time::Duration;
 use std::thread;
 use std::net::TcpStream;
 use std::str;
+use std::cmp;
+use std::mem;
 
 struct Rect {
     x: usize, y: usize, w: usize, h: usize,
@@ -208,12 +210,41 @@ macro_rules! chat_info {
 struct Prompt {
     buffer: Vec<char>,
     cursor: usize,
+    scroll: usize,
 }
 
 impl Prompt {
+    fn sync_scroll_with_cursor(&mut self, w: usize) {
+        if self.cursor < self.scroll {
+            self.scroll = self.cursor;
+        }
+        if self.scroll + w <= self.cursor {
+            self.scroll = self.cursor - w;
+        }
+    }
+
+    fn sync_terminal_cursor(&mut self, qc: &mut impl Write, x: usize, y: usize, w: usize) -> io::Result<()> {
+        if let Some(w) = w.checked_sub(1) {
+            self.sync_scroll_with_cursor(w);
+            let offset = self.cursor - self.scroll;
+            let _ = qc.queue(MoveTo((x + offset) as u16, y as u16))?;
+        }
+        Ok(())
+    }
+
     fn render(&mut self, buffer: &mut Buffer, x: usize, y: usize, w: usize) {
-        // TODO: scrolling the prompt so the cursor is always visible
-        buffer.put_cells(x, y, self.buffer.get(0..w as usize).unwrap_or(&self.buffer), Color::White, Color::Black);
+        if let Some(w) = w.checked_sub(1) {
+            self.sync_scroll_with_cursor(w);
+            let begin = self.scroll;
+            let end = cmp::min(self.scroll + w, self.buffer.len());
+            if let Some(window) = self.buffer.get(begin..end) {
+                buffer.put_cells(x, y, window, Color::White, Color::Black);
+                if self.scroll + w < self.buffer.len() {
+                    // TODO: put a similar '<' on the right to indicate when there is some content there
+                    buffer.put_cell(x + w, y, '>', Color::White, Color::Black);
+                }
+            }
+        }
     }
 
     fn insert(&mut self, x: char) {
@@ -309,10 +340,12 @@ fn connect_command(client: &mut Client, argument: &str) {
                     .ok();
             }
             _ => {
+                // TODO: get the signature of the command from COMMANDS
                 chat_error!(&mut client.chat, "Incorrect usage of connect command. Try /connect <ip> <token>");
             }
         }
     } else {
+        // TODO: get the signature of the command from COMMANDS
         chat_error!(&mut client.chat, "You are already connected to a server. Disconnect with /disconnect first.");
     }
 }
@@ -379,6 +412,7 @@ const COMMANDS: &[Command] = &[
     },
 ];
 
+// TODO: find_command should be const fn so you could look up specific commands at compile time
 fn find_command(name: &str) -> Option<&Command> {
     COMMANDS.iter().find(|command| command.name == name)
 }
@@ -526,8 +560,8 @@ fn main() -> io::Result<()> {
             x: 0,
             y: 1,
             w: w as usize,
-            // TODO: make sure there is no underflow anywhere when the user intentionally make the
-            // terminal very small
+            // TODO: make sure there is no underflow anywhere when the user intentionally make the terminal very small
+            // We can just go through all the sub operations in this file and make them checked
             h: h as usize-3,
         });
         let status_label = if client.stream.is_some() {
@@ -539,9 +573,9 @@ fn main() -> io::Result<()> {
         prompt.render(&mut buf_curr, 0, h as usize-1, w as usize);
 
         apply_patches(&mut stdout, &buf_prev.diff(&buf_curr))?;
-        stdout.queue(MoveTo(prompt.cursor as u16, h-1))?;
+        prompt.sync_terminal_cursor(&mut stdout, 0, h as usize-1, w as usize)?;
         stdout.flush()?;
-        buf_prev = buf_curr.clone();
+        mem::swap(&mut buf_curr, &mut buf_prev);
 
         thread::sleep(Duration::from_millis(33));
     }
