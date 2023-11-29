@@ -603,7 +603,7 @@ fn main() -> io::Result<()> {
         stdout.flush()?;
         mem::swap(&mut buf_curr, &mut buf_prev);
 
-        thread::sleep(Duration::from_millis(33));
+        thread::sleep(Duration::from_millis(16));
     }
     Ok(())
 }
