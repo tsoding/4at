@@ -20,4 +20,3 @@ path = "./src/pandora.rs"
 [dependencies]
 crossterm = "0.27.0"
 getrandom = "0.2.10"
-rustls = "0.21.8"
