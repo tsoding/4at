@@ -263,9 +263,6 @@ fn main() -> Result<()> {
     })?;
     println!("INFO: listening to {}", Sens(address));
 
-    // let (message_sender, message_receiver) = channel();
-    // thread::spawn(|| server(message_receiver, token));
-
     let mut conns = HashMap::<SocketAddr, Arc<TcpStream>>::new();
     let mut server = Server::from_token(token);
 
