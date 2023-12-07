@@ -1,4 +1,4 @@
-use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr, Shutdown};
+use std::net::{IpAddr, SocketAddr, Shutdown};
 use std::result;
 use std::io::{Read, Write};
 use std::fmt;
@@ -10,6 +10,7 @@ use std::fmt::Write as OtherWrite;
 use std::fs;
 use std::io;
 use std::thread;
+use mio::net::{TcpListener, TcpStream};
 
 type Result<T> = result::Result<T, ()>;
 
@@ -268,11 +269,8 @@ fn main() -> Result<()> {
 
     println!("INFO: check {token_file_path} file for the token");
     let address = format!("0.0.0.0:{PORT}");
-    let listener = TcpListener::bind(&address).map_err(|err| {
+    let listener = TcpListener::bind(address.parse().unwrap()).map_err(|err| {
         eprintln!("ERROR: could not bind {address}: {err}", address = Sens(&address), err = Sens(err))
-    })?;
-    listener.set_nonblocking(true).map_err(|err| {
-        eprintln!("ERROR: could not set server socket as nonblocking: {err}");
     })?;
     println!("INFO: listening to {}", Sens(address));
 
@@ -281,10 +279,6 @@ fn main() -> Result<()> {
     loop {
         match listener.accept() {
             Ok((stream, author_addr)) => {
-                if let Err(err) = stream.set_nonblocking(true) {
-                    eprintln!("ERROR: could not mark connection as non-blocking: {err}");
-                    break;
-                }
                 server.client_connected(stream, author_addr);
             }
             Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
@@ -294,5 +288,4 @@ fn main() -> Result<()> {
         server.update();
         thread::sleep(Duration::from_millis(16));
     }
-    Ok(())
 }
