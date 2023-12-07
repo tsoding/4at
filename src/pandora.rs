@@ -19,7 +19,7 @@ fn command_dragon(command_name: &str, args: &mut env::Args) -> Result<()> {
         eprintln!("Usage: {command_name} <address>");
         eprintln!("ERROR: no address is provided. Example: 127.0.0.1:6969");
     })?;
-    
+
     let mut server = TcpStream::connect(&address).map_err(|err| {
         eprintln!("ERROR: could not connect to {address}: {err}");
     })?;

@@ -141,46 +141,48 @@ impl Server {
                 eprintln!("ERROR: message rate check on new message: the clock might have gone backwards: {err}");
                 Duration::from_secs(0)
             });
-            if diff >= MESSAGE_RATE {
-                if let Ok(text) = str::from_utf8(&bytes) {
-                    self.sinners.entry(author_addr.ip()).or_insert(Sinner::new()).forgive();
-                    author.last_message = now;
-                    if author.authed {
-                        println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
-                        for (addr, client) in self.clients.iter() {
-                            if *addr != author_addr && client.authed {
-                                let _ = writeln!(client.conn.as_ref(), "{text}").map_err(|err| {
-                                    eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
-                                });
-                            }
-                        }
-                    } else {
-                        if text == self.token {
-                            author.authed = true;
-                            println!("INFO: {} authorized!", Sens(author_addr));
-                            let _ = writeln!(author.conn.as_ref(), "Welcome to the Club buddy!").map_err(|err| {
-                                eprintln!("ERROR: could not send welcome message to {}: {}", Sens(author_addr), Sens(err));
-                            });
-                        } else {
-                            // TODO: let the user know that they were banned after this attempt
-                            println!("INFO: {} failed authorization!", Sens(author_addr));
-                            let _ = writeln!(author.conn.as_ref(), "Invalid token! Bruh!").map_err(|err| {
-                                eprintln!("ERROR: could not notify client {} about invalid token: {}", Sens(author_addr), Sens(err));
-                            });
-                            let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
-                                eprintln!("ERROR: could not shutdown {}: {}", Sens(author_addr), Sens(err));
-                            });
-                            self.clients.remove(&author_addr);
-                            // TODO: each IP strike must be properly documented in the source code giving the reasoning
-                            // behind it.
-                            self.strike_ip(author_addr.ip());
-                        }
+            if diff < MESSAGE_RATE {
+                self.strike_ip(author_addr.ip());
+                return;
+            }
+            let text = if let Ok(text) = str::from_utf8(&bytes) {
+                text
+            } else {
+                return
+            };
+            self.sinners.entry(author_addr.ip()).or_insert(Sinner::new()).forgive();
+            author.last_message = now;
+            if author.authed {
+                println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
+                for (addr, client) in self.clients.iter() {
+                    if *addr != author_addr && client.authed {
+                        let _ = writeln!(client.conn.as_ref(), "{text}").map_err(|err| {
+                            eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
+                        });
                     }
-                } else {
-                    self.strike_ip(author_addr.ip())
                 }
             } else {
-                self.strike_ip(author_addr.ip());
+                if text != self.token {
+                    // TODO: let the user know that they were banned after this attempt
+                    println!("INFO: {} failed authorization!", Sens(author_addr));
+                    let _ = writeln!(author.conn.as_ref(), "Invalid token! Bruh!").map_err(|err| {
+                        eprintln!("ERROR: could not notify client {} about invalid token: {}", Sens(author_addr), Sens(err));
+                    });
+                    let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
+                        eprintln!("ERROR: could not shutdown {}: {}", Sens(author_addr), Sens(err));
+                    });
+                    self.clients.remove(&author_addr);
+                    // TODO: each IP strike must be properly documented in the source code giving the reasoning
+                    // behind it.
+                    self.strike_ip(author_addr.ip());
+                    return;
+                }
+
+                author.authed = true;
+                println!("INFO: {} authorized!", Sens(author_addr));
+                let _ = writeln!(author.conn.as_ref(), "Welcome to the Club buddy!").map_err(|err| {
+                    eprintln!("ERROR: could not send welcome message to {}: {}", Sens(author_addr), Sens(err));
+                });
             }
         }
     }
