@@ -2,7 +2,7 @@ use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr, Shutdown};
 use std::result;
 use std::io::{Read, Write};
 use std::fmt;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::collections::HashMap;
 use std::time::{SystemTime, Duration};
 use std::str;
@@ -35,7 +35,7 @@ impl<T: fmt::Display> fmt::Display for Sens<T> {
 }
 
 struct Client {
-    conn: Arc<TcpStream>,
+    conn: Rc<TcpStream>,
     last_message: SystemTime,
     connected_at: SystemTime,
     authed: bool,
@@ -86,7 +86,7 @@ impl Server {
         }
     }
 
-    fn client_connected(&mut self, author: Arc<TcpStream>, author_addr: SocketAddr) {
+    fn client_connected(&mut self, mut author: TcpStream, author_addr: SocketAddr) {
         let now = SystemTime::now();
 
         if let Some(sinner) = self.sinners.get_mut(&author_addr.ip()) {
@@ -97,7 +97,6 @@ impl Server {
                         Duration::ZERO
                     });
                     if diff < BAN_LIMIT {
-                        let mut author = author.as_ref();
                         let secs = (BAN_LIMIT - diff).as_secs_f32();
                         // TODO: probably remove this logging, cause banned MFs may still keep connecting and overflow us with logs
                         println!("INFO: Client {author_addr} tried to connected, by that MF is banned for {secs} secs", author_addr = Sens(author_addr));
@@ -118,7 +117,7 @@ impl Server {
 
         println!("INFO: Client {author_addr} connected", author_addr = Sens(author_addr));
         self.clients.insert(author_addr.clone(), Client {
-            conn: author.clone(),
+            conn: Rc::new(author),
             last_message: now - 2*MESSAGE_RATE,
             connected_at: now,
             authed: false,
@@ -264,7 +263,6 @@ fn main() -> Result<()> {
     })?;
     println!("INFO: listening to {}", Sens(address));
 
-    let mut conns = HashMap::<SocketAddr, Arc<TcpStream>>::new();
     let mut server = Server::from_token(token);
 
     for stream in listener.incoming() {
@@ -275,11 +273,7 @@ fn main() -> Result<()> {
                     break;
                 }
                 match stream.peer_addr() {
-                    Ok(author_addr) => {
-                        let stream = Arc::new(stream);
-                        server.client_connected(stream.clone(), author_addr);
-                        conns.insert(author_addr, stream);
-                    }
+                    Ok(author_addr) => server.client_connected(stream, author_addr),
                     Err(err) => eprintln!("ERROR: could not get peer address: {err}", err = Sens(err)),
                 }
             }
@@ -288,27 +282,26 @@ fn main() -> Result<()> {
             }
         }
 
+        let conns: Vec<_> = server.clients.iter().map(|(&author_addr, client)| {
+            (author_addr, client.conn.clone())
+        }).collect();
+
         let mut buffer = [0; 64];
 
-        conns.retain(|&author_addr, stream| {
+        for (author_addr, stream) in conns {
             match stream.as_ref().read(&mut buffer) {
                 Ok(0) => {
                     server.client_disconnected(author_addr);
-                    false
                 }
                 Ok(n) => {
                     let bytes: Vec<_> = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
                     server.client_read(author_addr, &bytes);
-                    true
                 }
-                Err(err) => if err.kind() == io::ErrorKind::WouldBlock {
-                    true
-                } else {
+                Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
                     server.client_errored(author_addr, err);
-                    false
                 }
             }
-        });
+        }
 
         server.prune_slowlorises();
 
