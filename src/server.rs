@@ -98,7 +98,7 @@ impl Server {
                     if diff < BAN_LIMIT {
                         let secs = (BAN_LIMIT - diff).as_secs_f32();
                         // TODO: probably remove this logging, cause banned MFs may still keep connecting and overflow us with logs
-                        println!("INFO: Client {author_addr} tried to connected, by that MF is banned for {secs} secs", author_addr = Sens(author_addr));
+                        println!("INFO: Client {author_addr} tried to connected, but that MF is banned for {secs} secs", author_addr = Sens(author_addr));
                         let _ = writeln!(author, "You are banned MF: {secs} secs left").map_err(|err| {
                             eprintln!("ERROR: could not send banned message to {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
                         });
