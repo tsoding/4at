@@ -283,22 +283,24 @@ fn main() -> Result<()> {
         }
 
         let conns: Vec<_> = server.clients.iter().map(|(&author_addr, client)| {
-            (author_addr, client.conn.clone())
+            (author_addr, Rc::downgrade(&client.conn))
         }).collect();
 
         let mut buffer = [0; 64];
 
         for (author_addr, stream) in conns {
-            match stream.as_ref().read(&mut buffer) {
-                Ok(0) => {
-                    server.client_disconnected(author_addr);
-                }
-                Ok(n) => {
-                    let bytes: Vec<_> = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
-                    server.client_read(author_addr, &bytes);
-                }
-                Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
-                    server.client_errored(author_addr, err);
+            if let Some(stream) = stream.upgrade() {
+                match stream.as_ref().read(&mut buffer) {
+                    Ok(0) => {
+                        server.client_disconnected(author_addr);
+                    }
+                    Ok(n) => {
+                        let bytes: Vec<_> = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
+                        server.client_read(author_addr, &bytes);
+                    }
+                    Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
+                        server.client_errored(author_addr, err);
+                    }
                 }
             }
         }
