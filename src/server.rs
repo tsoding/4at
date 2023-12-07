@@ -209,7 +209,30 @@ impl Server {
         }
     }
 
-    fn prune_slowlorises(&mut self) {
+    fn update(&mut self) {
+        let conns: Vec<_> = self.clients.iter().map(|(&author_addr, client)| {
+            (author_addr, Rc::downgrade(&client.conn))
+        }).collect();
+
+        let mut buffer = [0; 64];
+
+        for (author_addr, stream) in conns {
+            if let Some(stream) = stream.upgrade() {
+                match stream.as_ref().read(&mut buffer) {
+                    Ok(0) => {
+                        self.client_disconnected(author_addr);
+                    }
+                    Ok(n) => {
+                        let bytes: Vec<_> = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
+                        self.client_read(author_addr, &bytes);
+                    }
+                    Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
+                        self.client_errored(author_addr, err);
+                    }
+                }
+            }
+        }
+
         // TODO: keep waiting connections in a separate hash map
         self.clients.retain(|addr, client| {
             if !client.authed {
@@ -282,30 +305,7 @@ fn main() -> Result<()> {
             }
         }
 
-        let conns: Vec<_> = server.clients.iter().map(|(&author_addr, client)| {
-            (author_addr, Rc::downgrade(&client.conn))
-        }).collect();
-
-        let mut buffer = [0; 64];
-
-        for (author_addr, stream) in conns {
-            if let Some(stream) = stream.upgrade() {
-                match stream.as_ref().read(&mut buffer) {
-                    Ok(0) => {
-                        server.client_disconnected(author_addr);
-                    }
-                    Ok(n) => {
-                        let bytes: Vec<_> = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
-                        server.client_read(author_addr, &bytes);
-                    }
-                    Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
-                        server.client_errored(author_addr, err);
-                    }
-                }
-            }
-        }
-
-        server.prune_slowlorises();
+        server.update();
 
         thread::sleep(Duration::from_millis(16));
     }
