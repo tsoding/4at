@@ -5,6 +5,8 @@ use std::result;
 use std::process::ExitCode;
 use std::io::Write;
 use getrandom::getrandom;
+use std::thread;
+use std::time::Duration;
 
 type Result<T> = result::Result<T, ()>;
 
@@ -16,13 +18,26 @@ struct Command {
 
 fn command_dragon(command_name: &str, args: &mut env::Args) -> Result<()> {
     let address = args.next().ok_or_else(|| {
-        eprintln!("Usage: {command_name} <address>");
+        eprintln!("Usage: {command_name} <address> [token]");
         eprintln!("ERROR: no address is provided. Example: 127.0.0.1:6969");
     })?;
+
+    let token = args.next();
 
     let mut server = TcpStream::connect(&address).map_err(|err| {
         eprintln!("ERROR: could not connect to {address}: {err}");
     })?;
+
+    if let Some(token) = token {
+        println!("INFO: Sending token...");
+        write!(&server, "{token}").map_err(|err| {
+            eprintln!("ERROR: could not authorize with the token: {err}");
+        })?;
+    }
+
+    // TODO: we should not need this sleep if we just had a properly
+    // defined protocol that specifies message separators
+    thread::sleep(Duration::from_millis(100));
 
     const DRAGON_BUFFER_SIZE: usize = 1024;
     let mut buffer = vec![0; DRAGON_BUFFER_SIZE];
@@ -34,6 +49,7 @@ fn command_dragon(command_name: &str, args: &mut env::Args) -> Result<()> {
         let n = server.write(&buffer).map_err(|err| {
             eprintln!("ERROR: could not write to {address}: {err}");
         })?;
+
 
         if n == 0 {
             eprintln!("INFO: {address} closed the connection");
