@@ -288,25 +288,20 @@ fn main() -> Result<()> {
 
     let mut server = Server::from_token(token);
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
+    loop {
+        match listener.accept() {
+            Ok((stream, author_addr)) => {
                 if let Err(err) = stream.set_nonblocking(true) {
                     eprintln!("ERROR: could not mark connection as non-blocking: {err}");
                     break;
                 }
-                match stream.peer_addr() {
-                    Ok(author_addr) => server.client_connected(stream, author_addr),
-                    Err(err) => eprintln!("ERROR: could not get peer address: {err}", err = Sens(err)),
-                }
+                server.client_connected(stream, author_addr);
             }
             Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
                 eprintln!("ERROR: could not accept connection: {err}")
             }
         }
-
         server.update();
-
         thread::sleep(Duration::from_millis(16));
     }
     Ok(())
