@@ -2,7 +2,6 @@ use std::net::{TcpListener, TcpStream, IpAddr, SocketAddr, Shutdown};
 use std::result;
 use std::io::{Read, Write};
 use std::fmt;
-use std::rc::Rc;
 use std::collections::HashMap;
 use std::time::{SystemTime, Duration};
 use std::str;
@@ -35,7 +34,7 @@ impl<T: fmt::Display> fmt::Display for Sens<T> {
 }
 
 struct Client {
-    conn: Rc<TcpStream>,
+    conn: TcpStream,
     last_message: SystemTime,
     connected_at: SystemTime,
     authed: bool,
@@ -117,25 +116,37 @@ impl Server {
 
         println!("INFO: Client {author_addr} connected", author_addr = Sens(author_addr));
         self.clients.insert(author_addr.clone(), Client {
-            conn: Rc::new(author),
+            conn: author,
             last_message: now - 2*MESSAGE_RATE,
             connected_at: now,
             authed: false,
         });
     }
 
-    fn client_disconnected(&mut self, author_addr: SocketAddr) {
-        // TODO: we need to distinguish between willful client disconnects and banned disconnects
-        // Banned Sinners may try to use this to fill up all the space on the hard drive
-        println!("INFO: Client {author_addr} disconnected", author_addr = Sens(author_addr));
-        // TODO: if the disconnected client was not authorized we may probably want to strike their
-        // IP, because they are probably constantly connecting/disconnecting trying to evade the
-        // strike.
-        self.clients.remove(&author_addr);
-    }
-
-    fn client_read(&mut self, author_addr: SocketAddr, bytes: &[u8]) {
+    fn client_read(&mut self, author_addr: SocketAddr) {
         if let Some(author) = self.clients.get_mut(&author_addr) {
+            let mut buffer = [0; 64];
+            let bytes: Vec<_> = match author.conn.read(&mut buffer) {
+                Ok(0) => {
+                    // TODO: we need to distinguish between willful client disconnects and banned disconnects
+                    // Banned Sinners may try to use this to fill up all the space on the hard drive
+                    println!("INFO: Client {author_addr} disconnected", author_addr = Sens(author_addr));
+                    // TODO: if the disconnected client was not authorized we may probably want to strike their
+                    // IP, because they are probably constantly connecting/disconnecting trying to evade the
+                    // strike.
+                    self.clients.remove(&author_addr);
+                    return;
+                }
+                Ok(n) => buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect(),
+                Err(err) => {
+                    if err.kind() != io::ErrorKind::WouldBlock {
+                        eprintln!("ERROR: could not read message from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
+                        self.clients.remove(&author_addr);
+                    }
+                    return;
+                }
+            };
+
             let now = SystemTime::now();
             let diff = now.duration_since(author.last_message).unwrap_or_else(|err| {
                 eprintln!("ERROR: message rate check on new message: the clock might have gone backwards: {err}");
@@ -154,9 +165,9 @@ impl Server {
             author.last_message = now;
             if author.authed {
                 println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
-                for (addr, client) in self.clients.iter() {
+                for (addr, client) in self.clients.iter_mut() {
                     if *addr != author_addr && client.authed {
-                        let _ = writeln!(client.conn.as_ref(), "{text}").map_err(|err| {
+                        let _ = writeln!(client.conn, "{text}").map_err(|err| {
                             eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
                         });
                     }
@@ -165,7 +176,7 @@ impl Server {
                 if text != self.token {
                     // TODO: let the user know that they were banned after this attempt
                     println!("INFO: {} failed authorization!", Sens(author_addr));
-                    let _ = writeln!(author.conn.as_ref(), "Invalid token! Bruh!").map_err(|err| {
+                    let _ = writeln!(author.conn, "Invalid token! Bruh!").map_err(|err| {
                         eprintln!("ERROR: could not notify client {} about invalid token: {}", Sens(author_addr), Sens(err));
                     });
                     let _ = author.conn.shutdown(Shutdown::Both).map_err(|err| {
@@ -180,16 +191,11 @@ impl Server {
 
                 author.authed = true;
                 println!("INFO: {} authorized!", Sens(author_addr));
-                let _ = writeln!(author.conn.as_ref(), "Welcome to the Club buddy!").map_err(|err| {
+                let _ = writeln!(author.conn, "Welcome to the Club buddy!").map_err(|err| {
                     eprintln!("ERROR: could not send welcome message to {}: {}", Sens(author_addr), Sens(err));
                 });
             }
         }
-    }
-
-    fn client_errored(&mut self, author_addr: SocketAddr, err: io::Error) {
-        eprintln!("ERROR: could not read message from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err));
-        self.clients.remove(&author_addr);
     }
 
     fn strike_ip(&mut self, ip: IpAddr) {
@@ -198,7 +204,7 @@ impl Server {
             println!("INFO: IP {ip} got banned", ip = Sens(ip));
             self.clients.retain(|addr, client| {
                 if addr.ip() == ip {
-                    let _ = writeln!(client.conn.as_ref(), "You are banned Sinner!").map_err(|err| {
+                    let _ = writeln!(client.conn, "You are banned Sinner!").map_err(|err| {
                         eprintln!("ERROR: could not send banned message to {addr}: {err}", addr = Sens(addr), err = Sens(err));
                     });
                     let _ = client.conn.shutdown(Shutdown::Both).map_err(|err| {
@@ -212,27 +218,9 @@ impl Server {
     }
 
     fn update(&mut self) {
-        let conns: Vec<_> = self.clients.iter().map(|(&author_addr, client)| {
-            (author_addr, Rc::downgrade(&client.conn))
-        }).collect();
-
-        let mut buffer = [0; 64];
-
-        for (author_addr, stream) in conns {
-            if let Some(stream) = stream.upgrade() {
-                match stream.as_ref().read(&mut buffer) {
-                    Ok(0) => {
-                        self.client_disconnected(author_addr);
-                    }
-                    Ok(n) => {
-                        let bytes: Vec<_> = buffer[0..n].iter().cloned().filter(|x| *x >= 32).collect();
-                        self.client_read(author_addr, &bytes);
-                    }
-                    Err(err) => if err.kind() != io::ErrorKind::WouldBlock {
-                        self.client_errored(author_addr, err);
-                    }
-                }
-            }
+        let addrs: Vec<SocketAddr> = self.clients.keys().cloned().collect();
+        for addr in addrs {
+            self.client_read(addr);
         }
 
         // TODO: keep waiting connections in a separate hash map
