@@ -176,7 +176,7 @@ impl ChatLog {
 
     fn render(&mut self, buffer: &mut Buffer, boundary: Rect) {
         let n = self.items.len();
-        let m = n.checked_sub(boundary.h).unwrap_or(0);
+        let m = n.saturating_sub(boundary.h);
         for (dy, (line, color)) in self.items.iter().skip(m).enumerate() {
             let line_chars: Vec<_> = line.chars().collect();
             buffer.put_cells(
