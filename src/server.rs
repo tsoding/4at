@@ -170,11 +170,16 @@ impl Server {
             if author.authed {
                 println!("INFO: Client {author_addr} sent message {bytes:?}", author_addr = Sens(author_addr));
                 for (client_token, client) in self.clients.iter_mut() {
-                    if *client_token != token && client.authed {
-                        let _ = writeln!(client.conn, "{text}").map_err(|err| {
-                            eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", author_addr = Sens(author_addr), err = Sens(err))
-                        });
-                    }
+                    let message = if *client_token != token && client.authed {
+                        format!("{text}")
+                    } else {
+                        format!("You: {text}")
+                    };
+
+                    let _ = writeln!(client.conn, "{message}").map_err(|err| {
+                        eprintln!("ERROR: could not broadcast message to all the clients from {author_addr}: {err}", 
+                            author_addr = Sens(author_addr), err = Sens(err))
+                    });
                 }
             } else {
                 if text != self.token {

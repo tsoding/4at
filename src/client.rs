@@ -187,6 +187,7 @@ impl ChatLog {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! chat_msg {
     ($chat:expr, $($arg:tt)*) => {
         $chat.push(format!($($arg)*), Color::White)
@@ -305,6 +306,12 @@ impl Prompt {
         }
     }
 
+    fn delete(&mut self) {
+        if self.cursor < self.buffer.len() {
+            self.buffer.remove(self.cursor);
+        }
+    }
+
     fn before_cursor(&self) -> &[char] {
         &self.buffer[..self.cursor]
     }
@@ -321,6 +328,12 @@ impl Prompt {
     fn delete_until_end(&mut self) {
         while self.cursor < self.buffer.len() {
             self.buffer.pop();
+        }
+    }
+
+    fn delete_word(&mut self) {
+        while self.at_cursor().is_alphabetic() {
+            self.buffer.remove(self.cursor);
         }
     }
 }
@@ -480,6 +493,7 @@ fn main() -> io::Result<()> {
                             match x {
                                 'c' => client.quit = true,
                                 'k' => prompt.delete_until_end(),
+                                'w' => prompt.delete_word(),
                                 _ => {}
                             }
                         } else {
@@ -498,8 +512,7 @@ fn main() -> io::Result<()> {
                             prompt.right_char();
                         }
                         KeyCode::Backspace => prompt.backspace(),
-                        // TODO: delete current character by KeyCode::Delete
-                        // TODO: delete word by Ctrl+W
+                        KeyCode::Delete => prompt.delete(),
                         KeyCode::Tab => {
                             if let Some((prefix, &[])) = parse_command(prompt.before_cursor()) {
                                 let prefix = prefix.iter().collect::<String>();
@@ -528,10 +541,6 @@ fn main() -> io::Result<()> {
                                 if let Some(ref mut stream) = &mut client.stream {
                                     let prompt = prompt.buffer.iter().collect::<String>();
                                     stream.write(prompt.as_bytes())?;
-                                    // TODO: don't display the message if it was not delivered
-                                    // Maybe the server should actually send your own message back.
-                                    // Not sending it back made sense in the telnet times.
-                                    chat_msg!(&mut client.chat, "{text}", text = &prompt);
                                 } else {
                                     chat_info!(&mut client.chat, "You are offline. Use {signature} to connect to a server.", signature = find_command("connect").expect("connect command").signature);
                                 }
@@ -550,7 +559,12 @@ fn main() -> io::Result<()> {
                 Ok(n) => {
                     if n > 0 {
                         if let Some(line) = sanitize_terminal_output(&buf[..n]) {
-                            client.chat.push(line, Color::White)
+                            // TODO: some user can just send message, that starts with 'You: ', and it will be highlighted as your
+                            if line.starts_with("You: ") {
+                                client.chat.push(line, Color::Magenta)
+                            } else {
+                                client.chat.push(line, Color::White);
+                            }
                         }
                     } else {
                         client.stream = None;
